@@ -7,6 +7,7 @@ import { HeadlessCircuit } from "digitaljs/src/circuit";
 
 const {
     luaL_checkstring,
+    luaL_checkinteger,
     luaL_checknumber,
     luaL_checkudata,
     luaL_newlib,
@@ -14,7 +15,9 @@ const {
     luaL_newstate,
     luaL_newmetatable,
     luaL_setmetatable,
-    luaL_loadstring
+    luaL_loadstring,
+    luaL_argcheck,
+    luaL_error
 } = lauxlib;
 const {
     lua_pop,
@@ -25,9 +28,18 @@ const {
     lua_pushnil,
     lua_pushvalue,
     lua_newuserdata,
+    lua_newthread,
+    lua_resume,
     lua_setfield,
     lua_toboolean,
-    lua_call
+    lua_tostring,
+    lua_call,
+    lua_error,
+    lua_isyieldable,
+    lua_yield,
+    lua_status,
+    LUA_OK,
+    LUA_YIELD
 } = lua;
 
 const LUA_VECTOR3VL = to_luastring("VECTOR3VL");
@@ -43,8 +55,8 @@ function lua_check3vl(L, n) {
     return udata.v;
 }
 
-const veclib = {
-    fromBin: (L) => {
+const veclib = { // TODO fromInteger
+    fromBin: (L) => { // TODO optional bits argument
         const str = luaL_checkstring(L, 1);
         lua_push3vl(L, Vector3vl.fromBin(to_jsstring(str)));
         return 1;
@@ -73,10 +85,18 @@ const luaopen_vec = (L) => {
 
 export class FengariRunner {
     #L;
+    #pidcnt = 0;
     #circuit;
+    #threads = new Map();
+    #queue = new Map();
+    #pidthreads = new Map();
     #simlib = {
         sleep: (L) => {
-            return 1;
+            if (!lua_isyieldable(L)) luaL_error(L, to_luastring("sim.sleep: not yieldable"));
+            const delay = luaL_checkinteger(L, 1);
+            luaL_argcheck(L, delay > 0, 1, to_luastring("sim.sleep: too short delay"));
+            this._enqueue(L, this.#circuit.tick + delay - 1);
+            lua_yield(L, 0);
         },
         tick: (L) => {
             lua_pushinteger(L, this.#circuit.tick);
@@ -148,70 +168,138 @@ export class FengariRunner {
         }
         luaL_newmetatable(L, LUA_VECTOR3VL);
         // TODO: __shl, __shr, __concat, __eq
-        add_unary_3vl_method_3vl("bitAnd", Vector3vl.prototype.and);
+        add_unary_3vl_method_3vl("band", Vector3vl.prototype.and);
         add_unary_3vl_method_3vl("__band", Vector3vl.prototype.and);
-        add_unary_3vl_method_3vl("bitOr", Vector3vl.prototype.or);
+        add_unary_3vl_method_3vl("bor", Vector3vl.prototype.or);
         add_unary_3vl_method_3vl("__bor", Vector3vl.prototype.or);
-        add_unary_3vl_method_3vl("bitXor", Vector3vl.prototype.xor);
+        add_unary_3vl_method_3vl("bxor", Vector3vl.prototype.xor);
         add_unary_3vl_method_3vl("__bxor", Vector3vl.prototype.xor);
-        add_unary_3vl_method_3vl("bitNand", Vector3vl.prototype.nand);
-        add_unary_3vl_method_3vl("bitNor", Vector3vl.prototype.nor);
-        add_unary_3vl_method_3vl("bitXnor", Vector3vl.prototype.xnor);
-        add_nullary_3vl_method("bitNot", Vector3vl.prototype.not);
+        add_unary_3vl_method_3vl("bnand", Vector3vl.prototype.nand);
+        add_unary_3vl_method_3vl("bnor", Vector3vl.prototype.nor);
+        add_unary_3vl_method_3vl("bxnor", Vector3vl.prototype.xnor);
+        add_nullary_3vl_method("bnot", Vector3vl.prototype.not);
         add_nullary_3vl_method("__bnot", Vector3vl.prototype.not);
         add_nullary_3vl_method("xmask", Vector3vl.prototype.xmask);
-        add_nullary_3vl_method("reduceAnd", Vector3vl.prototype.reduceAnd);
-        add_nullary_3vl_method("reduceOr", Vector3vl.prototype.reduceOr);
-        add_nullary_3vl_method("reduceXor", Vector3vl.prototype.reduceXor);
-        add_nullary_3vl_method("reduceNand", Vector3vl.prototype.reduceNand);
-        add_nullary_3vl_method("reduceNor", Vector3vl.prototype.reduceNor);
-        add_nullary_3vl_method("reduceXnor", Vector3vl.prototype.reduceXnor);
-        add_nullary_string_method("toHex", Vector3vl.prototype.toHex);
-        add_nullary_string_method("toBin", Vector3vl.prototype.toBin);
-        add_nullary_string_method("toOct", Vector3vl.prototype.toOct);
-        add_boolean_property("isHigh", Vector3vl.prototype, "isHigh");
-        add_boolean_property("isLow", Vector3vl.prototype, "isLow");
-        add_boolean_property("isDefined", Vector3vl.prototype, "isDefined");
-        add_boolean_property("isFullyDefined", Vector3vl.prototype, "isFullyDefined");
+        add_nullary_3vl_method("rand", Vector3vl.prototype.reduceAnd);
+        add_nullary_3vl_method("ror", Vector3vl.prototype.reduceOr);
+        add_nullary_3vl_method("rxor", Vector3vl.prototype.reduceXor);
+        add_nullary_3vl_method("rnand", Vector3vl.prototype.reduceNand);
+        add_nullary_3vl_method("rnor", Vector3vl.prototype.reduceNor);
+        add_nullary_3vl_method("rxnor", Vector3vl.prototype.reduceXnor);
+        add_nullary_string_method("tohexstring", Vector3vl.prototype.toHex);
+        add_nullary_string_method("tobinstring", Vector3vl.prototype.toBin);
+        add_nullary_string_method("tooctstring", Vector3vl.prototype.toOct); // toInteger
+        add_boolean_property("ishigh", Vector3vl.prototype, "isHigh");
+        add_boolean_property("islow", Vector3vl.prototype, "isLow");
+        add_boolean_property("isdefined", Vector3vl.prototype, "isDefined");
+        add_boolean_property("isfullydefined", Vector3vl.prototype, "isFullyDefined");
         add_integer_property("bits", Vector3vl.prototype, "bits");
         add_integer_property("__len", Vector3vl.prototype, "bits");
         lua_pushvalue(L, -1);
         lua_setfield(L, -2, to_luastring("__index"));
         lua_pop(L, 1);
-        this.listenTo(circuit, 'postUpdateGates', () => {
+        this.listenTo(circuit, 'postUpdateGates', (tick) => {
+            const q = this.#queue.get(tick);
+            this.#queue.delete(tick);
+            if (q !== undefined)
+                for (const pid of q) {
+                    const thr = this.#pidthreads.get(pid).env;
+                    this._resume(thr);
+                }
         });
+    }
+    shutdown() {
+        this.stopListening();
+        this.#threads = undefined;
+        this.#queue = undefined;
+        this.#pidthreads = undefined;
     }
     _run(source, rets) {
         const ret = luaL_loadstring(this.#L, to_luastring(source));
-        if (ret != lua.LUA_OK) throw new Error("Failed loading LUA code");
+        if (ret != LUA_OK) throw new Error("Failed loading LUA code");
         lua_call(this.#L, 0, rets);
     }
     run(source) {
         this._run(source, 0);
     }
-    run_string(source) {
+    runString(source) {
         this._run(source, 1);
         const ret = to_jsstring(luaL_checkstring(this.#L, 1));
         lua_pop(this.#L, 1);
         return ret;
     }
-    run_number(source) {
+    runNumber(source) {
         this._run(source, 1);
         const ret = luaL_checknumber(this.#L, 1);
         lua_pop(this.#L, 1);
         return ret;
     }
-    run_boolean(source) {
+    runBoolean(source) {
         this._run(source, 1);
         const ret = lua_toboolean(this.#L, 1);
         lua_pop(this.#L, 1);
         return ret;
     }
-    run_3vl(source) {
+    run3vl(source) {
         this._run(source, 1);
         const ret = lua_check3vl(this.#L, 1);
         lua_pop(this.#L, 1);
         return ret;
+    }
+    _thread_pid(thr) {
+        const tdata = this.#threads.get(thr);
+        if (tdata !== undefined) return tdata.pid;
+        const pid = this.#pidcnt++;
+        const new_tdata = {
+            pid: pid,
+            env: thr, 
+            callbacks: []
+        };
+        this.#pidthreads.set(pid, new_tdata);
+        this.#threads.set(thr, new_tdata);
+        return pid;
+    }
+    runThread(source) {
+        const thr = lua_newthread(this.#L);
+        const ret_ls = luaL_loadstring(thr, to_luastring(source));
+        if (ret_ls != LUA_OK) throw new Error("Failed loading LUA code");
+        const ret_re = lua_resume(thr, null, 0);
+        if (ret_re == LUA_YIELD) {
+            return this._thread_pid(thr);
+        } else if (ret_re != LUA_OK) {
+            throw new Error(to_jsstring(lua_tostring(thr, -1)));
+        }
+    }
+    isThreadRunning(pid) {
+        return this.#pidthreads.has(pid);
+    }
+    stopThread(pid) {
+        const tdata = this.#pidthreads.get(pid);
+        if (tdata === undefined) return;
+        this._stopthread(tdata);
+    }
+    _stopthread(tdata) {
+        for (const s of this.#queue.values())
+            s.delete(tdata.pid);
+        for (const c of tdata.callbacks)
+            this.stopListening(undefined, undefined, c);
+        this.#pidthreads.delete(tdata.pid);
+        this.#threads.delete(tdata.env);
+    }
+    _enqueue(L, tick) {
+        if (this.#queue.get(tick) === undefined)
+            this.#queue.set(tick, new Set());
+        this.#queue.get(tick).add(this._thread_pid(L));
+    }
+    _resume(L) {
+        const ret_re = lua_resume(L, null, 0);
+        if (ret_re != LUA_YIELD) {
+            const tdata = this.#threads.get(L);
+            if (tdata !== undefined)
+                this._stopthread(tdata);
+            if (ret_re != LUA_OK)
+                throw new Error(to_jsstring(lua_tostring(thr, -1)));
+        }
     }
 };
 
