@@ -26,11 +26,22 @@ const data = {
 const circuit = new HeadlessCircuit(data);
 const runner = new FengariRunner(circuit);
 
+test("newbool", () => {
+    expect(runner.run3vl(`return vec.newbool(true);`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.newbool(false);`).eq(Vector3vl.zero)).toBeTruthy();
+});
+
+test("new", () => {
+    expect(runner.run3vl(`return vec.new(true)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.new(false)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec.new(vec.newbool(true))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.new(vec.newbool(false))`).eq(Vector3vl.zero)).toBeTruthy();
+});
 
 test("setInput", () => {
-    runner.run(`sim.setInput("i", vec.fromBool(true));`);
+    runner.run(`sim.setInput("i", true);`);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
-    runner.run(`sim.setInput("i", vec.fromBool(false));`);
+    runner.run(`sim.setInput("i", false);`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
 });
 
@@ -46,7 +57,7 @@ test("tick", () => {
 });
 
 test("sleep 1", () => {
-    const pid = runner.runThread(`sim.setInput("i", vec.fromBool(false)); sim.sleep(1); sim.setInput("i", vec.fromBool(true))`);
+    const pid = runner.runThread(`sim.setInput("i", false); sim.sleep(1); sim.setInput("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.updateGates();
@@ -55,7 +66,7 @@ test("sleep 1", () => {
 });
 
 test("sleep 2", () => {
-    const pid = runner.runThread(`sim.setInput("i", vec.fromBool(false)); sim.sleep(2); sim.setInput("i", vec.fromBool(true))`);
+    const pid = runner.runThread(`sim.setInput("i", false); sim.sleep(2); sim.setInput("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.updateGates();
@@ -67,7 +78,7 @@ test("sleep 2", () => {
 });
 
 test("stopThread", () => {
-    const pid = runner.runThread(`sim.setInput("i", vec.fromBool(false)); sim.sleep(1); sim.setInput("i", vec.fromBool(true))`);
+    const pid = runner.runThread(`sim.setInput("i", false); sim.sleep(1); sim.setInput("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     runner.stopThread(pid);

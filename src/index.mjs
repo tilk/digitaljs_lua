@@ -10,6 +10,7 @@ const {
     luaL_checkinteger,
     luaL_checknumber,
     luaL_checkudata,
+    luaL_testudata,
     luaL_newlib,
     luaL_requiref,
     luaL_newstate,
@@ -17,6 +18,7 @@ const {
     luaL_setmetatable,
     luaL_loadstring,
     luaL_argcheck,
+    luaL_argerror,
     luaL_error
 } = lauxlib;
 const {
@@ -31,9 +33,11 @@ const {
     lua_newthread,
     lua_resume,
     lua_setfield,
+    lua_isboolean,
     lua_toboolean,
     lua_tostring,
     lua_call,
+    lua_pcall,
     lua_error,
     lua_isyieldable,
     lua_yield,
@@ -51,29 +55,37 @@ function lua_push3vl(L, v) {
 }
 
 function lua_check3vl(L, n) {
-    const udata = luaL_checkudata(L, n, LUA_VECTOR3VL);
-    return udata.v;
+    const udata = luaL_testudata(L, n, LUA_VECTOR3VL);
+    if (udata !== null) return udata.v;
+    if (lua_isboolean(L, n))
+        return Vector3vl.fromBool(lua_toboolean(L, n));
+    luaL_argerror(L, n, "not convertible to vec");
 }
 
 const veclib = { // TODO fromInteger
-    fromBin: (L) => { // TODO optional bits argument
+    newbin: (L) => { // TODO optional bits argument
         const str = luaL_checkstring(L, 1);
         lua_push3vl(L, Vector3vl.fromBin(to_jsstring(str)));
         return 1;
     },
-    fromOct: (L) => {
+    newoct: (L) => {
         const str = luaL_checkstring(L, 1);
         lua_push3vl(L, Vector3vl.fromOct(to_jsstring(str)));
         return 1;
     },
-    fromHex: (L) => {
+    newhex: (L) => {
         const str = luaL_checkstring(L, 1);
         lua_push3vl(L, Vector3vl.fromHex(to_jsstring(str)));
         return 1;
     },
-    fromBool: (L) => {
+    newbool: (L) => {
         const b = lua_toboolean(L, 1);
         lua_push3vl(L, Vector3vl.fromBool(b));
+        return 1;
+    },
+    'new': (L) => {
+        const v = lua_check3vl(L, 1);
+        lua_push3vl(L, v);
         return 1;
     }
 };
@@ -92,9 +104,9 @@ export class FengariRunner {
     #pidthreads = new Map();
     #simlib = {
         sleep: (L) => {
-            if (!lua_isyieldable(L)) luaL_error(L, to_luastring("sim.sleep: not yieldable"));
+            if (!lua_isyieldable(L)) luaL_error(L, "sim.sleep: not yieldable");
             const delay = luaL_checkinteger(L, 1);
-            luaL_argcheck(L, delay > 0, 1, to_luastring("sim.sleep: too short delay"));
+            luaL_argcheck(L, delay > 0, 1, "sim.sleep: too short delay");
             this._enqueue(L, this.#circuit.tick + delay - 1);
             lua_yield(L, 0);
         },
@@ -217,7 +229,10 @@ export class FengariRunner {
     _run(source, rets) {
         const ret = luaL_loadstring(this.#L, to_luastring(source));
         if (ret != LUA_OK) throw new Error("Failed loading LUA code");
-        lua_call(this.#L, 0, rets);
+        const ret_call = lua_pcall(this.#L, 0, rets, 0);
+        if (ret != LUA_OK) {
+            throw new Error(to_jsstring(lua_tostring(thr, -1)));
+        }
     }
     run(source) {
         this._run(source, 0);
@@ -261,6 +276,7 @@ export class FengariRunner {
     }
     runThread(source) {
         const thr = lua_newthread(this.#L);
+        lua_pop(this.#L, 1); // would be unsafe in C LUA because of GC
         const ret_ls = luaL_loadstring(thr, to_luastring(source));
         if (ret_ls != LUA_OK) throw new Error("Failed loading LUA code");
         const ret_re = lua_resume(thr, null, 0);
