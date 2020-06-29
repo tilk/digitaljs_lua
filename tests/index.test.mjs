@@ -26,16 +26,105 @@ const data = {
 const circuit = new HeadlessCircuit(data);
 const runner = new FengariRunner(circuit);
 
-test("newbool", () => {
-    expect(runner.run3vl(`return vec.newbool(true);`).eq(Vector3vl.one)).toBeTruthy();
-    expect(runner.run3vl(`return vec.newbool(false);`).eq(Vector3vl.zero)).toBeTruthy();
+test("frombool", () => {
+    expect(runner.run3vl(`return vec.frombool(true);`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.frombool(false);`).eq(Vector3vl.zero)).toBeTruthy();
+});
+
+test("frominteger", () => {
+    expect(runner.run3vl(`return vec.frominteger(1);`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.frominteger(0);`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec.frominteger(10);`).eq(Vector3vl.fromNumber(10))).toBeTruthy();
+    expect(runner.run3vl(`return vec.frominteger(-10);`).eq(Vector3vl.fromNumber(-10))).toBeTruthy();
+});
+
+test("frombin", () => {
+    expect(runner.run3vl(`return vec.frombin("");`).eq(Vector3vl.make(0, 0))).toBeTruthy();
+    expect(runner.run3vl(`return vec.frombin("1");`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec.frombin("0");`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec.frombin("1010");`).eq(Vector3vl.fromBin("1010"))).toBeTruthy();
+});
+
+test("fromoct", () => {
+    expect(runner.run3vl(`return vec.fromoct("");`).eq(Vector3vl.make(0, 0))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromoct("7");`).eq(Vector3vl.ones(3))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromoct("0");`).eq(Vector3vl.zeros(3))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromoct("10");`).eq(Vector3vl.fromOct("10"))).toBeTruthy();
+});
+
+test("fromhex", () => {
+    expect(runner.run3vl(`return vec.fromhex("");`).eq(Vector3vl.make(0, 0))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromhex("f");`).eq(Vector3vl.ones(4))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromhex("0");`).eq(Vector3vl.zeros(4))).toBeTruthy();
+    expect(runner.run3vl(`return vec.fromhex("10");`).eq(Vector3vl.fromHex("10"))).toBeTruthy();
 });
 
 test("new", () => {
-    expect(runner.run3vl(`return vec.new(true)`).eq(Vector3vl.one)).toBeTruthy();
-    expect(runner.run3vl(`return vec.new(false)`).eq(Vector3vl.zero)).toBeTruthy();
-    expect(runner.run3vl(`return vec.new(vec.newbool(true))`).eq(Vector3vl.one)).toBeTruthy();
-    expect(runner.run3vl(`return vec.new(vec.newbool(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(vec.frombool(true))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(vec.frombool(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(0)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(10)`).eq(Vector3vl.fromNumber(10))).toBeTruthy();
+    expect(runner.run3vl(`return vec(-10)`).eq(Vector3vl.fromNumber(-10))).toBeTruthy();
+    expect(runner.run3vl(`return vec("b10")`).eq(Vector3vl.fromBin("10"))).toBeTruthy();
+    expect(runner.run3vl(`return vec("4b10")`).eq(Vector3vl.fromBin("10", 4))).toBeTruthy();
+    expect(runner.run3vl(`return vec("h10")`).eq(Vector3vl.fromHex("10"))).toBeTruthy();
+    expect(runner.run3vl(`return vec("o10")`).eq(Vector3vl.fromOct("10"))).toBeTruthy();
+});
+
+test("bit ops", () => {
+    expect(runner.run3vl(`return vec(true):band(vec(true))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):band(vec(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false):band(vec(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true) & (vec(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):bor(vec(true))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):bor(vec(false))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false):bor(vec(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true) | (vec(false))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):bxor(vec(true))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):bxor(vec(false))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false):bxor(vec(false))`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true) ~ (vec(false))`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(true):bnot()`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false):bnot()`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return ~vec(true)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return ~vec(false)`).eq(Vector3vl.one)).toBeTruthy();
+});
+
+test("bits", () => {
+    expect(runner.runNumber(`return vec(false):bits()`)).toEqual(1);
+    expect(runner.runNumber(`return vec(2):bits()`)).toEqual(2);
+    expect(runner.runNumber(`return #vec(false)`)).toEqual(1);
+});
+
+test("eq", () => {
+    expect(runner.runBoolean(`return vec(false) == vec(false)`)).toBeTruthy();
+    expect(runner.runBoolean(`return vec(false) == vec(true)`)).toBeFalsy();
+    expect(runner.runBoolean(`return vec(false) == vec(2)`)).toBeFalsy();
+});
+
+test("bit index", () => {
+    expect(runner.run3vl(`return vec(true)(0)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(false)(0)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(0)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(-1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(-2)`).eq(Vector3vl.zero)).toBeTruthy();
+});
+
+test("bit slice", () => {
+    expect(runner.run3vl(`return vec(2)(1, 1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(0, 1)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(-1, 1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(-2, 1)`).eq(Vector3vl.zero)).toBeTruthy();
+    expect(runner.run3vl(`return vec(2)(0, 2)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
+});
+
+test("concat", () => {
+    expect(runner.run3vl(`return vec(true) .. vec(true)`).eq(Vector3vl.fromBin('11'))).toBeTruthy();
+    expect(runner.run3vl(`return vec(true) .. vec(false)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
 });
 
 test("setInput", () => {

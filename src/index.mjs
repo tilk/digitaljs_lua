@@ -10,6 +10,7 @@ const {
     luaL_checkinteger,
     luaL_checknumber,
     luaL_checkudata,
+    luaL_optinteger,
     luaL_testudata,
     luaL_newlib,
     luaL_requiref,
@@ -22,6 +23,8 @@ const {
     luaL_error
 } = lauxlib;
 const {
+    lua_newtable,
+    lua_gettop,
     lua_pop,
     lua_pushcfunction,
     lua_pushinteger,
@@ -33,8 +36,12 @@ const {
     lua_newthread,
     lua_resume,
     lua_setfield,
+    lua_setmetatable,
     lua_isboolean,
+    lua_isinteger,
+    lua_isstring,
     lua_toboolean,
+    lua_tointeger,
     lua_tostring,
     lua_call,
     lua_pcall,
@@ -47,6 +54,16 @@ const {
 } = lua;
 
 const LUA_VECTOR3VL = to_luastring("VECTOR3VL");
+                
+function protect(L, f) {
+    return function() {
+        try {
+            return f.apply(this, arguments);
+        } catch(e) {
+            luaL_error(L, e.message);
+        }
+    }
+}
 
 function lua_push3vl(L, v) {
     const udata = lua_newuserdata(L, 0);
@@ -59,39 +76,58 @@ function lua_check3vl(L, n) {
     if (udata !== null) return udata.v;
     if (lua_isboolean(L, n))
         return Vector3vl.fromBool(lua_toboolean(L, n));
+    if (lua_isinteger(L, n))
+        return Vector3vl.fromNumber(lua_tointeger(L, n));
+    if (lua_isstring(L, n)) 
+        return protect(L, Vector3vl.fromString)(to_jsstring(lua_tostring(L, n)));
     luaL_argerror(L, n, "not convertible to vec");
 }
 
-const veclib = { // TODO fromInteger
-    newbin: (L) => { // TODO optional bits argument
+const veclib = {
+    frombin: (L) => {
         const str = luaL_checkstring(L, 1);
-        lua_push3vl(L, Vector3vl.fromBin(to_jsstring(str)));
+        const bits = luaL_optinteger(L, 2, undefined);
+        lua_push3vl(L, Vector3vl.fromBin(to_jsstring(str), bits));
         return 1;
     },
-    newoct: (L) => {
+    fromoct: (L) => {
         const str = luaL_checkstring(L, 1);
-        lua_push3vl(L, Vector3vl.fromOct(to_jsstring(str)));
+        const bits = luaL_optinteger(L, 2, undefined);
+        lua_push3vl(L, Vector3vl.fromOct(to_jsstring(str), bits));
         return 1;
     },
-    newhex: (L) => {
+    fromhex: (L) => {
         const str = luaL_checkstring(L, 1);
-        lua_push3vl(L, Vector3vl.fromHex(to_jsstring(str)));
+        const bits = luaL_optinteger(L, 2, undefined);
+        lua_push3vl(L, Vector3vl.fromHex(to_jsstring(str), bits));
         return 1;
     },
-    newbool: (L) => {
+    frombool: (L) => {
         const b = lua_toboolean(L, 1);
-        lua_push3vl(L, Vector3vl.fromBool(b));
+        const bits = luaL_optinteger(L, 2, undefined);
+        lua_push3vl(L, Vector3vl.fromBool(b, bits));
         return 1;
     },
-    'new': (L) => {
-        const v = lua_check3vl(L, 1);
+    frominteger: (L) => {
+        const n = luaL_checknumber(L, 1);
+        const bits = luaL_optinteger(L, 2, undefined);
+        lua_push3vl(L, Vector3vl.fromNumber(n, bits));
+        return 1;
+    }
+};
+
+const veclibmeta = {
+    '__call': (L) => {
+        const v = lua_check3vl(L, 2);
         lua_push3vl(L, v);
         return 1;
     }
 };
-        
+
 const luaopen_vec = (L) => {
     luaL_newlib(L, veclib);
+    luaL_newlib(L, veclibmeta);
+    lua_setmetatable(L, -2);
     return 1;
 };
 
@@ -141,73 +177,71 @@ export class FengariRunner {
         luaL_requiref(L, to_luastring("vec"), luaopen_vec, 1);
         lua_pop(L, 1);
         const add_method = (name, f) => {
-            lua_pushcfunction(L, (L) => {
+            lua_pushcfunction(L, protect(L, (L) => {
                 f(L);
                 return 1;
-            });
+            }));
             lua_setfield(L, -2, to_luastring(name));
         }
-        const add_unary_3vl_method_3vl = (name, method) => {
+        const add_unary_method = (f_push, f_check, name, method) => {
             add_method(name, (L) => {
-                lua_push3vl(L, method.apply(lua_check3vl(L, 1), lua_check3vl(L, 2)));
+                f_push(L, method.call(lua_check3vl(L, 1), f_check(L, 2)));
             });
         }
-        const add_nullary_3vl_method = (name, method) => {
+        const add_nullary_method = (f_push, name, method) => {
             add_method(name, (L) => {
-                lua_push3vl(L, method.apply(lua_check3vl(L, 1)));
+                f_push(L, method.call(lua_check3vl(L, 1)));
             });
         }
-        const add_nullary_string_method = (name, method) => {
-            add_method(name, (L) => {
-                lua_pushstring(L, to_luastring(method.apply(lua_check3vl(L, 1))));
-            });
-        }
-        const add_nullary_boolean_method = (name, method) => {
-            add_method(name, (L) => {
-                lua_pushboolean(L, method.apply(lua_check3vl(L, 1)));
-            });
-        }
-        const add_nullary_integer_method = (name, method) => {
-            add_method(name, (L) => {
-                lua_pushinteger(L, method.apply(lua_check3vl(L, 1)));
-            });
-        }
-        const add_boolean_property = (name, what, fld) => {
-            add_nullary_boolean_method(name, Object.getOwnPropertyDescriptor(what, fld).get);
-        }
-        const add_integer_property = (name, what, fld) => {
-            add_nullary_integer_method(name, Object.getOwnPropertyDescriptor(what, fld).get);
+        const add_property = (f_push, name, what, fld) => {
+            add_nullary_method(f_push, name, Object.getOwnPropertyDescriptor(what, fld).get);
         }
         luaL_newmetatable(L, LUA_VECTOR3VL);
-        // TODO: __shl, __shr, __concat, __eq
-        add_unary_3vl_method_3vl("band", Vector3vl.prototype.and);
-        add_unary_3vl_method_3vl("__band", Vector3vl.prototype.and);
-        add_unary_3vl_method_3vl("bor", Vector3vl.prototype.or);
-        add_unary_3vl_method_3vl("__bor", Vector3vl.prototype.or);
-        add_unary_3vl_method_3vl("bxor", Vector3vl.prototype.xor);
-        add_unary_3vl_method_3vl("__bxor", Vector3vl.prototype.xor);
-        add_unary_3vl_method_3vl("bnand", Vector3vl.prototype.nand);
-        add_unary_3vl_method_3vl("bnor", Vector3vl.prototype.nor);
-        add_unary_3vl_method_3vl("bxnor", Vector3vl.prototype.xnor);
-        add_nullary_3vl_method("bnot", Vector3vl.prototype.not);
-        add_nullary_3vl_method("__bnot", Vector3vl.prototype.not);
-        add_nullary_3vl_method("xmask", Vector3vl.prototype.xmask);
-        add_nullary_3vl_method("rand", Vector3vl.prototype.reduceAnd);
-        add_nullary_3vl_method("ror", Vector3vl.prototype.reduceOr);
-        add_nullary_3vl_method("rxor", Vector3vl.prototype.reduceXor);
-        add_nullary_3vl_method("rnand", Vector3vl.prototype.reduceNand);
-        add_nullary_3vl_method("rnor", Vector3vl.prototype.reduceNor);
-        add_nullary_3vl_method("rxnor", Vector3vl.prototype.reduceXnor);
-        add_nullary_string_method("tohexstring", Vector3vl.prototype.toHex);
-        add_nullary_string_method("tobinstring", Vector3vl.prototype.toBin);
-        add_nullary_string_method("tooctstring", Vector3vl.prototype.toOct); // toInteger
-        add_boolean_property("ishigh", Vector3vl.prototype, "isHigh");
-        add_boolean_property("islow", Vector3vl.prototype, "isLow");
-        add_boolean_property("isdefined", Vector3vl.prototype, "isDefined");
-        add_boolean_property("isfullydefined", Vector3vl.prototype, "isFullyDefined");
-        add_integer_property("bits", Vector3vl.prototype, "bits");
-        add_integer_property("__len", Vector3vl.prototype, "bits");
-        lua_pushvalue(L, -1);
+        add_unary_method(lua_push3vl, lua_check3vl, "__band", Vector3vl.prototype.and);
+        add_unary_method(lua_push3vl, lua_check3vl, "__bor", Vector3vl.prototype.or);
+        add_unary_method(lua_push3vl, lua_check3vl, "__bxor", Vector3vl.prototype.xor);
+        add_unary_method(lua_pushboolean, lua_check3vl, "__eq", Vector3vl.prototype.eq);
+        add_nullary_method(lua_push3vl, "__bnot", Vector3vl.prototype.not);
+        add_property(lua_pushinteger, "__len", Vector3vl.prototype, "bits");
+        add_unary_method(lua_push3vl, luaL_checkinteger, "__call", function(i) {
+            luaL_argcheck(L, i >= -this.bits && i < this.bits, 2, "index out of bounds");
+            const ii = i >= 0 ? i : this.bits + i;
+            const j = luaL_optinteger(L, 3, undefined);
+            if (j === undefined)
+                return Vector3vl.make(1, this.get(ii));
+            else {
+                luaL_argcheck(L, j >= 0, "slice count negative");
+                return this.slice(ii, ii + j);
+            }
+        });
+        add_unary_method(lua_push3vl, lua_check3vl, "__concat", function(v) {
+            return v.concat(this);
+        });
+        lua_newtable(L);
+        add_unary_method(lua_push3vl, lua_check3vl, "band", Vector3vl.prototype.and);
+        add_unary_method(lua_push3vl, lua_check3vl, "bor", Vector3vl.prototype.or);
+        add_unary_method(lua_push3vl, lua_check3vl, "bxor", Vector3vl.prototype.xor);
+        add_unary_method(lua_push3vl, lua_check3vl, "bnand", Vector3vl.prototype.nand);
+        add_unary_method(lua_push3vl, lua_check3vl, "bnor", Vector3vl.prototype.nor);
+        add_unary_method(lua_push3vl, lua_check3vl, "bxnor", Vector3vl.prototype.xnor);
+        add_nullary_method(lua_push3vl, "bnot", Vector3vl.prototype.not);
+        add_nullary_method(lua_push3vl, "xmask", Vector3vl.prototype.xmask);
+        add_nullary_method(lua_push3vl, "rand", Vector3vl.prototype.reduceAnd);
+        add_nullary_method(lua_push3vl, "ror", Vector3vl.prototype.reduceOr);
+        add_nullary_method(lua_push3vl, "rxor", Vector3vl.prototype.reduceXor);
+        add_nullary_method(lua_push3vl, "rnand", Vector3vl.prototype.reduceNand);
+        add_nullary_method(lua_push3vl, "rnor", Vector3vl.prototype.reduceNor);
+        add_nullary_method(lua_push3vl, "rxnor", Vector3vl.prototype.reduceXnor);
+        add_nullary_method(lua_pushstring, "tohexstring", Vector3vl.prototype.toHex);
+        add_nullary_method(lua_pushstring, "tobinstring", Vector3vl.prototype.toBin);
+        add_nullary_method(lua_pushstring, "tooctstring", Vector3vl.prototype.toOct);
+        add_nullary_method(lua_pushinteger, "tointeger", Vector3vl.prototype.toNumber);
+        add_nullary_method(lua_pushinteger, "tointegersigned", Vector3vl.prototype.toNumberSigned);
+        add_property(lua_pushboolean, "ishigh", Vector3vl.prototype, "isHigh");
+        add_property(lua_pushboolean, "islow", Vector3vl.prototype, "isLow");
+        add_property(lua_pushboolean, "isdefined", Vector3vl.prototype, "isDefined");
+        add_property(lua_pushboolean, "isfullydefined", Vector3vl.prototype, "isFullyDefined");
+        add_property(lua_pushinteger, "bits", Vector3vl.prototype, "bits");
         lua_setfield(L, -2, to_luastring("__index"));
         lua_pop(L, 1);
         this.listenTo(circuit, 'postUpdateGates', (tick) => {
