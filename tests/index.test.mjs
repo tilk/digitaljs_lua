@@ -2,7 +2,7 @@
 
 import { Vector3vl } from '3vl';
 import { HeadlessCircuit } from 'digitaljs/src/circuit';
-import { FengariRunner } from '../src/index.mjs';
+import { FengariRunner, Display3vlLua } from '../src/index.mjs';
 
 const data = {
     devices: {
@@ -176,4 +176,29 @@ test("stopThread", () => {
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
+
+test("display", () => {
+    const display = new Display3vlLua({source: `return {
+        name = "luabin",
+        pattern = "[01x]*",
+        sort = 0,
+        can = function (kind, bits) return true; end,
+        read = function (data, bits) return vec.frombin(data, bits); end,
+        show = function (data) return data:tobin(); end,
+        validate = function (data, bits) return string.match(data, "^[01x]*$") ~= nil end,
+        size = function (bits) return bits; end
+    }`});
+    expect(display.name).toEqual("luabin");
+    expect(display.pattern).toEqual("[01x]*");
+    expect(display.sort).toEqual(0);
+    expect(display.can("read", 1)).toEqual(true);
+    expect(display.read("10").eq(Vector3vl.fromBin("10"))).toBeTruthy();
+    expect(display.read("10", 3).eq(Vector3vl.fromBin("10", 3))).toBeTruthy();
+    expect(display.show(Vector3vl.fromBin("10"))).toEqual("10");
+    expect(display.validate("10", 3)).toEqual(true);
+    expect(display.validate("foo", 1)).toEqual(false);
+    expect(display.size(2)).toEqual(2);
+});
+
+
 
