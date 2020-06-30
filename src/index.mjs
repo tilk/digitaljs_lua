@@ -24,7 +24,8 @@ const {
     luaL_argcheck,
     luaL_argerror,
     luaL_error,
-    luaL_ref
+    luaL_ref,
+    luaL_unref
 } = lauxlib;
 const {
     lua_newtable,
@@ -423,7 +424,7 @@ export class Display3vlLua {
         this.#ref = luaL_ref(this.#L, LUA_REGISTRYINDEX);
     }
     unref() {
-        lua_unref(this.#L, LUA_REGISTRYINDEX, this.#ref);
+        luaL_unref(this.#L, LUA_REGISTRYINDEX, this.#ref);
         this.#ref = null;
     }
     get name() {
