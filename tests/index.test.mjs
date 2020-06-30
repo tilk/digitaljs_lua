@@ -2,7 +2,7 @@
 
 import { Vector3vl } from '3vl';
 import { HeadlessCircuit } from 'digitaljs/src/circuit';
-import { FengariRunner, Display3vlLua } from '../src/index.mjs';
+import { FengariRunner, Display3vlLua, LuaError } from '../src/index.mjs';
 
 const data = {
     devices: {
@@ -200,5 +200,18 @@ test("display", () => {
     expect(display.size(2)).toEqual(2);
 });
 
-
+test("errors", () => {
+    expect(() => runner.run("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.run3vl("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.runNumber("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.runBoolean("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.runString("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.runThread("foo bar baz")).toThrow(LuaError);
+    expect(() => runner.run('"x"+1')).toThrow(LuaError);
+    expect(() => runner.run3vl('"x"+1')).toThrow(LuaError);
+    expect(() => runner.runNumber('"x"+1')).toThrow(LuaError);
+    expect(() => runner.runBoolean('"x"+1')).toThrow(LuaError);
+    expect(() => runner.runString('"x"+1')).toThrow(LuaError);
+    expect(() => runner.runThread('"x"+1')).toThrow(LuaError);
+});
 

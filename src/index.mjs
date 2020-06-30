@@ -52,6 +52,7 @@ const {
     lua_toboolean,
     lua_tointeger,
     lua_tostring,
+    lua_tonumber,
     lua_call,
     lua_pcall,
     lua_error,
@@ -75,30 +76,39 @@ function protect(L, f) {
     }
 }
 
+export class LuaError extends Error {
+    constructor(message, luaMessage, luaError) {
+        super(message + '\n' + luaMessage);
+        this.name = "LuaError";
+        this.luaMessage = luaMessage;
+        this.luaError = luaError;
+    }
+}
+
 function lua_handle_error(L, emsg, ret) {
     if (ret != LUA_OK && ret != LUA_YIELD) {
         const msg = to_jsstring(lua_tostring(L, -1));
         lua_pop(L, 1);
-        throw new Error(emsg + msg);
+        throw new LuaError(emsg, msg, ret);
     }
     return ret;
 }
 
 function lua_load_jsstring_error(L, source) {
     return lua_handle_error(L,
-        "Failed loading LUA code:\n", 
+        "Failed loading LUA code:", 
         luaL_loadstring(L, to_luastring(source)));
 }
 
 function lua_pcall_error(L, nargs, nresults, msgh) {
     return lua_handle_error(L,
-        "Failed running LUA code:\n",
+        "Failed running LUA code:",
         lua_pcall(L, nargs, nresults, msgh));
 }
 
 function lua_resume_error(L, from, nargs) {
     return lua_handle_error(L,
-        "Failed running LUA thread:\n",
+        "Failed running LUA thread:",
         lua_resume(L, from, nargs));
 }
 
@@ -108,7 +118,7 @@ function lua_push3vl(L, v) {
     luaL_setmetatable(L, LUA_VECTOR3VL);
 }
 
-function lua_check3vl(L, n) {
+function lua_to3vl(L, n) {
     const udata = luaL_testudata(L, n, LUA_VECTOR3VL);
     if (udata !== null) return udata.v;
     if (lua_isboolean(L, n))
@@ -117,7 +127,13 @@ function lua_check3vl(L, n) {
         return Vector3vl.fromNumber(lua_tointeger(L, n));
     if (lua_isstring(L, n)) 
         return protect(L, Vector3vl.fromString)(to_jsstring(lua_tostring(L, n)));
-    luaL_argerror(L, n, "not convertible to vec");
+    return null;
+}
+
+function lua_check3vl(L, n) {
+    const ret = lua_to3vl(L, n);
+    if (ret === null) luaL_argerror(L, n, "not convertible to vec");
+    return ret;
 }
 
 const veclib = {
@@ -313,7 +329,7 @@ export class FengariRunner {
     }
     runNumber(source) {
         this._run(source, 1);
-        const ret = luaL_checknumber(this.#L, 1);
+        const ret = lua_tonumber(this.#L, 1);
         lua_pop(this.#L, 1);
         return ret;
     }
@@ -325,7 +341,7 @@ export class FengariRunner {
     }
     run3vl(source) {
         this._run(source, 1);
-        const ret = lua_check3vl(this.#L, 1);
+        const ret = lua_to3vl(this.#L, 1);
         lua_pop(this.#L, 1);
         return ret;
     }
@@ -378,7 +394,7 @@ export class FengariRunner {
             const tdata = this.#threads.get(L);
             if (tdata !== undefined)
                 this._stopthread(tdata);
-            lua_handle_error(L, "Failed resuming LUA thread:\n", ret_re);
+            lua_handle_error(L, "Failed resuming LUA thread:", ret_re);
         }
     }
 };
@@ -442,8 +458,12 @@ export class Display3vlLua {
         lua_remove(this.#L, -2);
         lua_pushstring(this.#L, to_luastring(kind));
         lua_pushinteger(this.#L, bits);
-        lua_pcall_error(this.#L, 2, 1, 0);
-        const ret = lua_toboolean(this.#L, 1);
+        try {
+            lua_pcall_error(this.#L, 2, 1, 0);
+        } catch (e) {
+            return false;
+        }
+        const ret = lua_toboolean(this.#L, -1);
         lua_pop(this.#L, 1);
         return ret;
     }
@@ -454,8 +474,12 @@ export class Display3vlLua {
         lua_pushstring(this.#L, to_luastring(data));
         if (bits) lua_pushinteger(this.#L, bits);
         else lua_pushnil(this.#L);
-        lua_pcall_error(this.#L, 2, 1, 0);
-        const ret = lua_check3vl(this.#L, 1);
+        try {
+            lua_pcall_error(this.#L, 2, 1, 0);
+        } catch (e) {
+            return null;
+        }
+        const ret = lua_to3vl(this.#L, -1);
         lua_pop(this.#L, 1);
         return ret;
     }
@@ -464,10 +488,16 @@ export class Display3vlLua {
         lua_getfield(this.#L, -1, to_luastring("show"));
         lua_remove(this.#L, -2);
         lua_push3vl(this.#L, data);
-        lua_pcall_error(this.#L, 1, 1, 0);
-        const ret = to_jsstring(luaL_checkstring(this.#L, 1));
+        try {
+            lua_pcall_error(this.#L, 1, 1, 0);
+        } catch (e) {
+            return "ERR";
+        }
+        const is = lua_isstring(this.#L, -1);
+        const ret = lua_tostring(this.#L, -1);
         lua_pop(this.#L, 1);
-        return ret;
+        if (!is) return "ERR";
+        return to_jsstring(ret);
     }
     validate(data, bits) {
         if (this.#regex) return this.#regex.test(data);
@@ -477,8 +507,12 @@ export class Display3vlLua {
         lua_pushstring(this.#L, to_luastring(data));
         if (bits) lua_pushinteger(this.#L, bits);
         else lua_pushnil(this.#L);
-        lua_pcall_error(this.#L, 2, 1, 0);
-        const ret = lua_toboolean(this.#L, 1);
+        try {
+            lua_pcall_error(this.#L, 2, 1, 0);
+        } catch (e) {
+            return false;
+        }
+        const ret = lua_toboolean(this.#L, -1);
         lua_pop(this.#L, 1);
         return ret;
     }
@@ -487,8 +521,12 @@ export class Display3vlLua {
         lua_getfield(this.#L, -1, to_luastring("size"));
         lua_remove(this.#L, -2);
         lua_pushinteger(this.#L, bits);
-        lua_pcall_error(this.#L, 1, 1, 0);
-        const ret = luaL_checknumber(this.#L, 1);
+        try {
+            lua_pcall_error(this.#L, 1, 1, 0);
+        } catch (e) {
+            return 0;
+        }
+        const ret = lua_tointeger(this.#L, -1);
         lua_pop(this.#L, 1);
         return ret;
     }
