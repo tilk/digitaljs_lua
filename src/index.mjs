@@ -264,7 +264,7 @@ export class FengariRunner {
         const ret = luaL_loadstring(this.#L, to_luastring(source));
         if (ret != LUA_OK) throw new Error("Failed loading LUA code");
         const ret_call = lua_pcall(this.#L, 0, rets, 0);
-        if (ret != LUA_OK) {
+        if (ret_call != LUA_OK) {
             throw new Error(to_jsstring(lua_tostring(thr, -1)));
         }
     }
