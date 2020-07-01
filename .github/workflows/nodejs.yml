@@ -9,7 +9,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [10.x, 12.x]
+        node-version: [12.x]
 
     steps:
     - uses: actions/checkout@v2
@@ -22,8 +22,4 @@ jobs:
     - run: npm test
       env:
         CI: true
-    - name: Upload artifact
-      uses: actions/upload-artifact@v1.0.0
-      with:
-        name: webpack
-        path: dist
+

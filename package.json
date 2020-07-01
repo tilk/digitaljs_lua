@@ -29,6 +29,7 @@
     "transform": {
       "^.+\\.m?jsx?$": "babel-jest"
     },
+    "transformIgnorePatterns": [],
     "moduleFileExtensions": [
       "js",
       "mjs"
