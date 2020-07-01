@@ -15,8 +15,8 @@
     "jest": "^26.0.1"
   },
   "dependencies": {
-    "3vl": "^0.3.3",
-    "digitaljs": "^0.6.3",
+    "3vl": "^0.3.4",
+    "digitaljs": "^0.6.4",
     "fengari": "0.1.4"
   },
   "jest": {
