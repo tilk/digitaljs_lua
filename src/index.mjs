@@ -254,7 +254,6 @@ const luaopen_vec = (L) => {
 
 export class FengariRunner {
     #L;
-    #pidcnt = 0;
     #circuit;
     #threads = new Map();
     #queue = new Map();
@@ -345,10 +344,9 @@ export class FengariRunner {
         lua_pop(this.#L, 1);
         return ret;
     }
-    _thread_pid(thr) {
-        const tdata = this.#threads.get(thr);
-        if (tdata !== undefined) return tdata.pid;
-        const pid = this.#pidcnt++;
+    runThread(source) {
+        const thr = lua_newthread(this.#L);
+        const pid = luaL_ref(this.#L, LUA_REGISTRYINDEX);
         const new_tdata = {
             pid: pid,
             env: thr, 
@@ -356,16 +354,16 @@ export class FengariRunner {
         };
         this.#pidthreads.set(pid, new_tdata);
         this.#threads.set(thr, new_tdata);
-        return pid;
-    }
-    runThread(source) {
-        const thr = lua_newthread(this.#L);
-        lua_pop(this.#L, 1); // would be unsafe in C LUA because of GC
-        const ret_ls = lua_load_jsstring_error(thr, source);
-        const ret_re = lua_resume_error(thr, null, 0);
-        if (ret_re == LUA_YIELD) {
-            return this._thread_pid(thr);
-        } 
+        try {
+            const ret_ls = lua_load_jsstring_error(thr, source);
+            const ret_re = lua_resume_error(thr, null, 0);
+            if (ret_re == LUA_YIELD)
+                return pid;
+            else this._stopthread(new_tdata);
+        } catch(e) {
+            this._stopthread(new_tdata);
+            throw e;
+        }
     }
     isThreadRunning(pid) {
         return this.#pidthreads.has(pid);
@@ -376,6 +374,7 @@ export class FengariRunner {
         this._stopthread(tdata);
     }
     _stopthread(tdata) {
+        luaL_unref(this.#L, LUA_REGISTRYINDEX, tdata.pid);
         for (const s of this.#queue.values())
             s.delete(tdata.pid);
         for (const c of tdata.callbacks)
@@ -387,6 +386,9 @@ export class FengariRunner {
         if (this.#queue.get(tick) === undefined)
             this.#queue.set(tick, new Set());
         this.#queue.get(tick).add(this._thread_pid(L));
+    }
+    _thread_pid(L) {
+        return this.#threads.get(L).pid;
     }
     _resume(L) {
         const ret_re = lua_resume(L, null, 0);
