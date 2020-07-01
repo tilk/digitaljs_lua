@@ -65,6 +65,7 @@ const {
 } = lua;
 
 const LUA_VECTOR3VL = to_luastring("VECTOR3VL");
+const LUA_EVENT = to_luastring("EVENT");
                 
 function protect(L, f) {
     return function() {
@@ -78,7 +79,7 @@ function protect(L, f) {
 
 export class LuaError extends Error {
     constructor(message, luaMessage, luaError) {
-        super(message + '\n' + luaMessage);
+        super("Code " + luaError + ": " + message + '\n' + luaMessage);
         this.name = "LuaError";
         this.luaMessage = luaMessage;
         this.luaError = luaError;
@@ -87,8 +88,9 @@ export class LuaError extends Error {
 
 function lua_handle_error(L, emsg, ret) {
     if (ret != LUA_OK && ret != LUA_YIELD) {
-        const msg = to_jsstring(lua_tostring(L, -1));
+        const lmsg = lua_tostring(L, -1);
         lua_pop(L, 1);
+        const msg = lmsg ? to_jsstring(lmsg) : "";
         throw new LuaError(emsg, msg, ret);
     }
     return ret;
@@ -110,6 +112,24 @@ function lua_resume_error(L, from, nargs) {
     return lua_handle_error(L,
         "Failed running LUA thread:",
         lua_resume(L, from, nargs));
+}
+
+function lua_pushevent(L, v) {
+    const udata = lua_newuserdata(L, 0);
+    udata.v = v;
+    luaL_setmetatable(L, LUA_EVENT);
+}
+
+function lua_toevent(L, n) {
+    const udata = luaL_testudata(L, n, LUA_EVENT);
+    if (udata !== null) return udata.v;
+    return null;
+}
+
+function lua_checkevent(L, n) {
+    const ret = lua_toevent(L, n);
+    if (ret === null) luaL_argerror(L, n, "not convertible to event");
+    return ret;
 }
 
 function lua_push3vl(L, v) {
@@ -177,7 +197,7 @@ const veclibmeta = {
     }
 };
 
-const luaopen_vec = (L) => {
+function luaopen_vec(L) {
     const add_method = (name, f) => {
         lua_pushcfunction(L, protect(L, (L) => {
             f(L);
@@ -260,27 +280,87 @@ export class FengariRunner {
     #pidthreads = new Map();
     #simlib = {
         sleep: (L) => {
-            if (!lua_isyieldable(L)) luaL_error(L, "sim.sleep: not yieldable");
+            if (!lua_isyieldable(L)) luaL_error(L, "sim.sleep: thread not yieldable");
+            if (!this.#threads.has(L)) luaL_error(L, "sim.sleep: thread not suspendable");
             const delay = luaL_checkinteger(L, 1);
             luaL_argcheck(L, delay > 0, 1, "sim.sleep: too short delay");
             this._enqueue(L, this.#circuit.tick + delay - 1);
             lua_yield(L, 0);
         },
+        wait: (L) => {
+            if (!lua_isyieldable(L)) luaL_error(L, "sim.wait: thread not yieldable");
+            const tdata = this.#threads.get(L);
+            if (tdata === undefined) luaL_error(L, "sim.wait: thread not suspendable");
+            const evt = lua_checkevent(L, 1);
+            for (const cb of evt(L)) tdata.callbacks.push(cb);
+            lua_yield(L, 0);
+        },
+        posedge: (L) => {
+            const args = lua_gettop(L);
+            if (args.length < 1) luaL_error(L, "sim.posedge: not enough arguments");
+            const wire = this._vararg_findwire(L, args, 0);
+            if (wire === undefined) luaL_error(L, "sim.posedge: wire not found");
+            if (wire.get('bits') != 1) luaL_error(L, "sim.posedge: wire not 1-bit");
+            lua_pushevent(L, this._make_event(wire, Vector3vl.one));
+            return 1;
+        },
+        negedge: (L) => {
+            const args = lua_gettop(L);
+            if (args.length < 1) luaL_error(L, "sim.negedge: not enough arguments");
+            const wire = this._vararg_findwire(L, args, 0);
+            if (wire === undefined) luaL_error(L, "sim.negedge: wire not found");
+            if (wire.get('bits') != 1) luaL_error(L, "sim.negedge: wire not 1-bit");
+            lua_pushevent(L, this._make_event(wire, Vector3vl.zero));
+            return 1;
+        },
+        value: (L) => {
+            const args = lua_gettop(L);
+            if (args.length < 2) luaL_error(L, "sim.value: not enough arguments");
+            const val = lua_check3vl(L, 1);
+            const wire = this._vararg_findwire(L, args, 1);
+            if (wire === undefined) luaL_error(L, "sim.value: wire not found");
+            if (wire.get('bits') != val.bits) luaL_error(L, "sim.value: wrong bit width");
+            lua_pushevent(L, this._make_event(wire, val));
+            return 1;
+        },
         tick: (L) => {
             lua_pushinteger(L, this.#circuit.tick);
             return 1;
         },
-        setInput: (L) => {
+        setinput: (L) => {
+            const name = luaL_checkstring(L, 1);
+            const vec = lua_check3vl(L, 2);
+            const inp = this.#circuit.findInputByNet(to_jsstring(name));
+            luaL_argcheck(L, inp !== undefined, 1, "input not found");
+            inp.setLogicValue(vec);
+            return 0;
+        },
+        getoutput: (L) => {
+            const name = luaL_checkstring(L, 1);
+            const out = this.#circuit.findOutputByNet(to_jsstring(name));
+            luaL_argcheck(L, out !== undefined, 1, "output not found");
+            const res = out.getLogicValue();
+            lua_push3vl(L, res);
+            return 1;
+        },
+        setinput_id: (L) => {
             const name = luaL_checkstring(L, 1);
             const vec = lua_check3vl(L, 2);
             this.#circuit.setInput(to_jsstring(name), vec);
-            lua_pushnil(L);
-            return 1;
+            return 0;
         },
-        getOutput: (L) => {
+        getoutput_id: (L) => {
             const name = luaL_checkstring(L, 1);
             const res = this.#circuit.getOutput(to_jsstring(name));
             lua_push3vl(L, res);
+            return 1;
+        },
+        getvalue: (L) => {
+            const args = lua_gettop(L);
+            if (args.length < 1) luaL_error(L, "sim.getvalue: not enough arguments");
+            const wire = this._vararg_findwire(L, args, 0);
+            if (wire === undefined) luaL_error(L, "sim.getvalue: wire not found");
+            lua_push3vl(L, wire.get('signal'));
             return 1;
         }
     };
@@ -289,6 +369,15 @@ export class FengariRunner {
         this.#circuit = circuit;
 
         const luaopen_sim = (L) => {
+            luaL_newmetatable(L, LUA_EVENT);
+            lua_pushcfunction(L, protect(L, (L) => {
+                const e1 = lua_checkevent(L, 1);
+                const e2 = lua_checkevent(L, 2);
+                lua_pushevent(L, L => e1(L) + e2(L));
+                return 1;
+            }));
+            lua_setfield(L, -2, to_luastring("__bor"));
+            lua_pop(L, 1);
             luaL_newlib(L, this.#simlib);
             return 1;
         };
@@ -300,11 +389,16 @@ export class FengariRunner {
         this.listenTo(circuit, 'postUpdateGates', (tick) => {
             const q = this.#queue.get(tick);
             this.#queue.delete(tick);
-            if (q !== undefined)
+            if (q !== undefined) {
+                const to_resume = [];
                 for (const pid of q) {
-                    const thr = this.#pidthreads.get(pid).env;
-                    this._resume(thr);
+                    const tdata = this.#pidthreads.get(pid);
+                    to_resume.push(tdata.env);
+                    this._unlisten(tdata);
                 }
+                for (const thr of to_resume)
+                    this._resume(thr);
+            }
         });
     }
     shutdown() {
@@ -373,12 +467,15 @@ export class FengariRunner {
         if (tdata === undefined) return;
         this._stopthread(tdata);
     }
-    _stopthread(tdata) {
-        luaL_unref(this.#L, LUA_REGISTRYINDEX, tdata.pid);
-        for (const s of this.#queue.values())
-            s.delete(tdata.pid);
+    _unlisten(tdata) {
         for (const c of tdata.callbacks)
             this.stopListening(undefined, undefined, c);
+    }
+    _stopthread(tdata) {
+        luaL_unref(this.#L, LUA_REGISTRYINDEX, tdata.pid);
+        this._unlisten(tdata);
+        for (const s of this.#queue.values())
+            s.delete(tdata.pid);
         this.#pidthreads.delete(tdata.pid);
         this.#threads.delete(tdata.env);
     }
@@ -398,6 +495,23 @@ export class FengariRunner {
                 this._stopthread(tdata);
             lua_handle_error(L, "Failed resuming LUA thread:", ret_re);
         }
+    }
+    _vararg_findwire(L, args, start = 0) {
+        const path = [];
+        for (const i of Array(args - 1 - start).keys()) 
+            path.push(to_jsstring(luaL_checkstring(L, i + 1 + start)));
+        const name = to_jsstring(luaL_checkstring(L, args));
+        return this.#circuit.findWireByLabel(name, path);
+    }
+    _make_event(wire, trigger) {
+        return L => {
+            const handler = (wire, signal) => {
+                if (signal.eq(trigger))
+                    this._enqueue(L, this.#circuit.tick);
+            };
+            this.listenToOnce(wire, "change:signal", handler);
+            return [handler];
+        };
     }
 };
 
