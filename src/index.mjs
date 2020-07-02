@@ -46,6 +46,7 @@ const {
     lua_remove,
     lua_setfield,
     lua_setmetatable,
+    lua_setglobal,
     lua_isboolean,
     lua_isinteger,
     lua_isstring,
@@ -239,6 +240,7 @@ function luaopen_vec(L) {
     add_unary_method(lua_push3vl, lua_check3vl, "__concat", function(v) {
         return v.concat(this);
     });
+    add_nullary_method(lua_pushstring, "__tostring", Vector3vl.prototype.toBin);
     lua_newtable(L);
     add_unary_method(lua_push3vl, lua_check3vl, "band", Vector3vl.prototype.and);
     add_unary_method(lua_push3vl, lua_check3vl, "bor", Vector3vl.prototype.or);
@@ -386,6 +388,25 @@ export class LuaRunner {
         lua_pop(L, 1);
         luaL_requiref(L, to_luastring("vec"), luaopen_vec, 1);
         lua_pop(L, 1);
+        lua_pushcfunction(L, protect(L, (L) => {
+            const n = lua_gettop(L);
+            const out = [];
+            lua_getglobal(L, to_luastring("tostring", true));
+            for (let i = 1; i <= n; i++) {
+                lua_pushvalue(L, -1);
+                lua_pushvalue(L, i);
+                lua_call(L, 1, 1);
+                const s = lua_tostring(L, -1);
+                if (s === null)
+                    return luaL_error(L, to_luastring("'tostring' must return a string to 'print'"));
+                out.push(to_jsstring(s));
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+            this.trigger('print', out);
+            return 0;
+        }));
+        lua_setglobal(L, 'print');
         this.listenTo(circuit, 'postUpdateGates', (tick) => {
             const q = this.#queue.get(tick);
             this.#queue.delete(tick);
@@ -393,11 +414,15 @@ export class LuaRunner {
                 const to_resume = [];
                 for (const pid of q) {
                     const tdata = this.#pidthreads.get(pid);
-                    to_resume.push(tdata.env);
+                    to_resume.push(tdata);
                     this._unlisten(tdata);
                 }
-                for (const thr of to_resume)
-                    this._resume(thr);
+                for (const tdata of to_resume)
+                    try {
+                        this._resume(tdata.env);
+                    } catch (e) {
+                        this.trigger('thread:error', tdata.pid, e);
+                    }
             }
         });
     }
@@ -478,6 +503,7 @@ export class LuaRunner {
             s.delete(tdata.pid);
         this.#pidthreads.delete(tdata.pid);
         this.#threads.delete(tdata.env);
+        this.trigger('thread:stop', tdata.pid);
     }
     _enqueue(L, tick) {
         if (this.#queue.get(tick) === undefined)

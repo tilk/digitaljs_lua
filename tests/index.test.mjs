@@ -206,14 +206,21 @@ test("sleep 2", () => {
 });
 
 test("stopThread", () => {
+    const callback = jest.fn(e => {});
+    runner.on('thread:stop', callback);
     const pid = runner.runThread(`sim.setinput_id("i", false); sim.sleep(1); sim.setinput_id("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
+    expect(callback.mock.calls.length).toBe(0);
     runner.stopThread(pid);
     expect(runner.isThreadRunning(pid)).toBeFalsy();
+    expect(callback.mock.calls.length).toBe(1);
     circuit.updateGates();
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
+    expect(callback.mock.calls.length).toBe(1);
+    expect(callback.mock.calls[0][0]).toBe(pid);
+    runner.off('thread:stop', callback);
 });
 
 test("posedge", () => {
@@ -316,5 +323,27 @@ test("lua errors", () => {
     expect(() => runner.runBoolean('"x"+1')).toThrow(LuaError);
     expect(() => runner.runString('"x"+1')).toThrow(LuaError);
     expect(() => runner.runThread('"x"+1')).toThrow(LuaError);
+});
+
+test("lua delayed errors", () => {
+    const callback = jest.fn(e => {});
+    runner.on('thread:error', callback);
+    const pid = runner.runThread("sim.sleep(1); foo()");
+    expect(callback.mock.calls.length).toBe(0);
+    circuit.updateGates();
+    expect(callback.mock.calls.length).toBe(1);
+    expect(callback.mock.calls[0][0]).toBe(pid);
+    expect(callback.mock.calls[0][1]).toBeInstanceOf(LuaError);
+    runner.off('thread:error', callback);
+});
+
+test("print", () => {
+    const callback = jest.fn(x => {});
+    runner.on("print", callback);
+    runner.run(`print("foo"); print(1, vec(2))`);
+    expect(callback.mock.calls.length).toBe(2);
+    expect(callback.mock.calls[0][0]).toStrictEqual(["foo"]);
+    expect(callback.mock.calls[1][0]).toStrictEqual(["1", "10"]);
+    runner.off("print", callback);
 });
 
