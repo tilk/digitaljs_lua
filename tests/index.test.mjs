@@ -2,7 +2,7 @@
 
 import { Vector3vl } from '3vl';
 import { HeadlessCircuit } from 'digitaljs/src/circuit';
-import { FengariRunner, Display3vlLua, LuaError } from '../src/index.mjs';
+import { LuaRunner, Display3vlLua, LuaError } from '../src/index.mjs';
 
 const data = {
     devices: {
@@ -24,7 +24,7 @@ const data = {
 };
 
 const circuit = new HeadlessCircuit(data);
-const runner = new FengariRunner(circuit);
+const runner = new LuaRunner(circuit);
 
 test("frombool", () => {
     expect(runner.run3vl(`return vec.frombool(true);`).eq(Vector3vl.one)).toBeTruthy();

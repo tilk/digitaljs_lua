@@ -1,5 +1,5 @@
 
-import { luaconf, lua, lauxlib, lualib, to_jsstring, to_luastring } from "fengari";
+import { luaconf, lua, lauxlib, lualib, to_jsstring, to_luastring } from "fengari-web";
 import Backbone from 'backbone';
 import _ from 'lodash';
 import { Vector3vl } from '3vl';
@@ -272,7 +272,7 @@ function luaopen_vec(L) {
     return 1;
 };
 
-export class FengariRunner {
+export class LuaRunner {
     #L;
     #circuit;
     #threads = new Map();
@@ -515,7 +515,7 @@ export class FengariRunner {
     }
 };
 
-_.extend(FengariRunner.prototype, Backbone.Events);
+_.extend(LuaRunner.prototype, Backbone.Events);
 
 export class Display3vlLua {
     #L;
