@@ -7,6 +7,9 @@ The Lua API for DigitalJS consists of two Lua libraries: `vec` and `sim`.
 
 ## The vec library
 
+The bits in the three-value vectors of this library can take one of three possible values: high (logical 1), low (logical 0) and undefined.
+The undefined state is analogous to the `x` value in Verilog/SystemVerilog.
+
 ### Constructing vectors
 
 The `vec` table is callable.
@@ -82,7 +85,7 @@ If omitted, the resulting vector has one bit in length.
 Varions bitwise operations are available using method syntax, including:
 
 * Bitwise and `v:band(w)`, bitwise or `v:bor(w)`, bitwise xor `v:bxor(w)`;
-* Negated operations: bitwise nand `v:bnand(w)`, bitwise nor `v:bnor(w)`, bitwise xnor `v:bxnor(w);
+* Negated operations: bitwise nand `v:bnand(w)`, bitwise nor `v:bnor(w)`, bitwise xnor `v:bxnor(w)`;
 * Bitwise not `v:bnot()`.
 
 Reducing operators are also available. They reduce a bit vector of an arbitrary length to a single bit
@@ -104,6 +107,55 @@ The following methods return a boolean value depending on the value of the vecto
 * `v:isdefined()` returns `true` if and only if the vector contains a 1 or 0 (the vector is not completely undefined).
 
 ## The sim library
+
+This library allows Lua code to interact with DigitalJS simulation, by observing the state of the circuit, changing input values, and waiting for events (only on specifically created threads).
+
+### Reading output values
+
+There are two functions for reading values of outputs:
+
+* `sim.getoutput(s)` returns the value of the output whose `net` property equals `s`. 
+   When used with yosys2digitaljs, this corresponds to Verilog module output names.
+* `sim.getoutput_id(s)` returns the value of the output whose identifier (as in JSON circuit description) equals `s`.
+
+### Setting input values
+
+Similarly, there are two functions for setting input values:
+
+* `sim.setinput(s, v)` sets the value of the input whose `net` property equals `s`.
+  When used with yosys2digitaljs, this corresponds to Verilog module output names.
+* `sim.setinput_id(s, v)` sets the value of the input whose identifier (as in JSON circuit description) equals `s`.
+
+The vector `v` needs to have the same number of bits as the circuit input referred to by `s`.
+
+### Getting simulation time
+
+The function `sim.tick()` returns the current simulation time as an integer.
+
+### Reading wire values
+
+The function `sim.getvalue(s)` returns the value of a wire whose `netname` property equals `s`. 
+This corresponds to the `name` property on a connector in JSON descriptor. 
+When used with yosys2digitaljs, this corresponds to wire names in Verilog modules.
+
+This function can also be called with more than one argument. When the call is `sim.getvalue(s1, ..., sn, s)`, the strings `s1` to `sn` denote subcircuit labels.
+
+### Sleeping
+
+The function `sim.sleep(n)` suspends execution of the script for `n` simulation cycles. 
+This is possible only in threads started directly by DigitalJS and will not work in a coroutine.
+
+### Waiting for events
+
+The function `sim.wait(e)` suspends execution of the script until the event named `e` happens. You can specify an event in one of the following ways:
+
+* `sim.posedge(s1, ..., sn, s)` denotes a positive edge on a single bit wire named `s` (in a subcircuit named by path `s1` to `sn`);
+* `sim.negedge(s1, ..., sn, s)` denotes a negative edge on a single bit wire named `s`;
+* `sim.value(v, s1, ..., sn, s)` denotes the value of the wire named `s` changing to `v`.
+
+To wait until one of a set of events happen, the events can be added together by using the bitwise or operator `|`.
+
+### Signal encoders/decoders
 
 TODO
 
