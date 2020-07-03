@@ -3,7 +3,6 @@ import { luaconf, lua, lauxlib, lualib, to_jsstring, to_luastring } from "fengar
 import Backbone from 'backbone';
 import _ from 'lodash';
 import { Vector3vl } from '3vl';
-import { HeadlessCircuit } from "digitaljs/src/circuit";
 
 const {
     luaL_openlibs
@@ -70,6 +69,16 @@ const LUA_EVENT = to_luastring("EVENT");
                 
 function protect(L, f) {
     return function() {
+        try {
+            return f.apply(this, arguments);
+        } catch(e) {
+            luaL_error(L, e.message);
+        }
+    }
+}
+
+function lprotect(f) {
+    return function(L) {
         try {
             return f.apply(this, arguments);
         } catch(e) {
@@ -200,7 +209,7 @@ const veclibmeta = {
 
 function luaopen_vec(L) {
     const add_method = (name, f) => {
-        lua_pushcfunction(L, protect(L, (L) => {
+        lua_pushcfunction(L, lprotect((L) => {
             f(L);
             return 1;
         }));
@@ -364,7 +373,13 @@ export class LuaRunner {
             if (wire === undefined) luaL_error(L, "sim.getvalue: wire not found");
             lua_push3vl(L, wire.get('signal'));
             return 1;
-        }
+        },
+        registerdisplay: lprotect((L) => {
+            const display = new Display3vlLua({L: L});
+            this.#circuit.addDisplay(display);
+            // TODO: remove displays on shutdown
+            return 0;
+        })
     };
     constructor(circuit) {
         const L = this.#L = luaL_newstate();
@@ -372,7 +387,7 @@ export class LuaRunner {
 
         const luaopen_sim = (L) => {
             luaL_newmetatable(L, LUA_EVENT);
-            lua_pushcfunction(L, protect(L, (L) => {
+            lua_pushcfunction(L, lprotect((L) => {
                 const e1 = lua_checkevent(L, 1);
                 const e2 = lua_checkevent(L, 2);
                 lua_pushevent(L, L => e1(L) + e2(L));
@@ -388,7 +403,7 @@ export class LuaRunner {
         lua_pop(L, 1);
         luaL_requiref(L, to_luastring("vec"), luaopen_vec, 1);
         lua_pop(L, 1);
-        lua_pushcfunction(L, protect(L, (L) => {
+        lua_pushcfunction(L, lprotect((L) => {
             const n = lua_gettop(L);
             const out = [];
             lua_getglobal(L, to_luastring("tostring", true));
@@ -558,8 +573,13 @@ export class Display3vlLua {
             luaL_requiref(this.#L, to_luastring("vec"), luaopen_vec, 1);
             lua_pop(this.#L, 1);
         }
-        const ret = lua_load_jsstring_error(this.#L, source);
-        lua_pcall_error(this.#L, 0, 1, 0);
+        if (L === undefined && source === undefined) {
+            throw new Error("Display3vlLua: no definition");
+        }
+        if (source !== undefined) {
+            const ret = lua_load_jsstring_error(this.#L, source);
+            lua_pcall_error(this.#L, 0, 1, 0);
+        }
         if (name !== undefined) this.#name = name;
         else {
             lua_getfield(this.#L, -1, to_luastring("name"));
