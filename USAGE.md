@@ -155,10 +155,99 @@ The function `sim.wait(e)` suspends execution of the script until the event name
 
 To wait until one of a set of events happen, the events can be added together by using the bitwise or operator `|`.
 
-### Signal encoders/decoders
+### Custom signal encoders/decoders
 
-TODO
+It is possible to add new, specialized signal encoders/decoders to DigitalJS.
+Their role is to present data to the user in a meaningful way, and also to allow entering data in a human-readable format.
+The built-in encoders/decoders present values in various number systems: binary, octal, decimal and hexadecimal.
+A custom encoder/decoder can, for example, display processor instructions using assembly notation, or decode various hardware protocols.
+
+An encoder/decoder is represented in Lua using a table with the following fields:
+
+* `name` is a string, naming the encoder/decoder.
+  The name is expected to be short, for example `bin` or `rv32i`.
+* `pattern` is a regular expression in JavaScript format, describing the format of encodings allowed by the decoder.
+  It is used to validate inputs in the user interface.
+  The pattern can be more general than the actual set of accepted values, the `validate` function has the final say.
+* `sort` is an integer, which decides the sorting order in the UI.
+  Encoders/decoders having the same `sort` value are sorted by name.
+  The built-in encoders/decoders have `sort` equal to 0.
+  This can be used to distinguish specialized encoders/decoders so that they don't mix with the generic ones.
+* `can(kind, bits)` is a function which should return a boolean value.
+  The first parameter, `kind`, is a string, either `"read"` or `"show"`.
+  The second parameter, `bits`, is a non-negative integer, and denotes a number of bits.
+  The function should return `true` if and only if the encoder/decoder can encode (read) or decode (show) values having a given number of bits.
+* `read(data, bits)` is a function which should return a three-value vector.
+  The first parameter, `data`, is the string to encode into a binary format.
+  The second parameter, `bits`, is a non-negative integer denoting the desired number of bits.
+  The returned vector should have `bits` bits.
+* `show(data)` is a function which should return a string.
+  The parameter, `data`, is the three-value vector to decode into a human-readable format.
+* `validate(data, bits)` is a function which should return a boolean value.
+  The parameters have the same meaning as for the `read(data, bits)` function.
+  The function should return `true` if and only if the `read` function would accept the given input.
+* `size(bits)` is a function which should return a positive integer.
+  The parameter, `bits`, is a non-negative integer denoting the number of bits we are interested in.
+  The function should return the maximum number of characters required to decode a `bits`-sized value.
+  This function is used by the UI to decide the size of an input or output field.
+
+The functions above cannot sleep, wait for events, or yield in any other way.
+They also should be pure functions, i.e. when called two times with same arguments, they should return the same value.
+
+To register a custom signal encoder/decoder, it should be passed as an argument to `sim.registerdisplay()`.
 
 ## Examples
 
-TODO
+### Generating an oscillating signal
+
+The following code generates on input `a` a square wave with period of 100 simulation cycles.
+
+```lua
+while true do
+    sim.setinput("a", true);
+    sim.sleep(50);
+    sim.setinput("a", false);
+    sim.sleep(50);
+end
+```
+
+### Reading synchronous output
+
+The following code prints a value on output `o` on a positive edge of the clock `clk` when the signal `v` is true:
+
+```lua
+while true do
+    sim.wait(sim.posedge("clk"));
+    if sim.getvalue("v"):ishigh() then
+        print(sim.getoutput("o"));
+    end
+end
+```
+
+### Binary encoder/decoder
+
+The following code is a encoder/decoder equivalent in functionality to the one built into DigitalJS.
+
+```lua
+sim.registerdisplay({
+    name = "luabin",
+    pattern = "[01x]*",
+    sort = 0,
+    can = function (kind, bits) 
+        return true; 
+    end,
+    read = function (data, bits)
+        return vec.frombin(data, bits);
+    end,
+    show = function (data)
+        return data:tobin();
+    end,
+    validate = function (data, bits)
+        return string.match(data, "^[01x]*$") ~= nil
+    end,
+    size = function (bits)
+        return bits;
+    end
+})
+```
+
