@@ -148,20 +148,27 @@ function lua_push3vl(L, v) {
     luaL_setmetatable(L, LUA_VECTOR3VL);
 }
 
-function lua_to3vl(L, n) {
+function lua_to3vl(L, n, bits) {
     const udata = luaL_testudata(L, n, LUA_VECTOR3VL);
-    if (udata !== null) return udata.v;
-    if (lua_isboolean(L, n))
-        return Vector3vl.fromBool(lua_toboolean(L, n));
-    if (lua_isinteger(L, n))
-        return Vector3vl.fromNumber(lua_tointeger(L, n));
-    if (lua_isstring(L, n)) 
-        return protect(L, Vector3vl.fromString)(to_jsstring(lua_tostring(L, n)));
-    return null;
+    let ret = null;
+    if (udata !== null) ret = udata.v; 
+    else if (lua_isboolean(L, n))
+        ret = Vector3vl.fromBool(lua_toboolean(L, n), bits);
+    else if (lua_isinteger(L, n))
+        ret = Vector3vl.fromNumber(lua_tointeger(L, n), bits);
+    else if (lua_isstring(L, n)) 
+        ret = protect(L, Vector3vl.fromString)(to_jsstring(lua_tostring(L, n)));
+    if (ret !== null && bits !== undefined) {
+        if (ret.bits < bits)
+            ret = udata.v.concat(Vector3vl.zeros(bits - udata.v.bits));
+        else if (ret.bits > bits)
+            ret = ret.slice(0, bits);
+    }
+    return ret;
 }
 
-function lua_check3vl(L, n) {
-    const ret = lua_to3vl(L, n);
+function lua_check3vl(L, n, bits) {
+    const ret = lua_to3vl(L, n, bits);
     if (ret === null) luaL_argerror(L, n, "not convertible to vec");
     return ret;
 }
@@ -201,7 +208,8 @@ const veclib = {
 
 const veclibmeta = {
     '__call': (L) => {
-        const v = lua_check3vl(L, 2);
+        const bits = luaL_optinteger(L, 3, undefined);
+        const v = lua_check3vl(L, 2, bits);
         lua_push3vl(L, v);
         return 1;
     }
@@ -217,7 +225,8 @@ function luaopen_vec(L) {
     }
     const add_unary_method = (f_push, f_check, name, method) => {
         add_method(name, (L) => {
-            f_push(L, method.call(lua_check3vl(L, 1), f_check(L, 2)));
+            const lhs = lua_check3vl(L, 1);
+            f_push(L, method.call(lhs, f_check(L, 2, lhs.bits)));
         });
     }
     const add_nullary_method = (f_push, name, method) => {
@@ -232,10 +241,10 @@ function luaopen_vec(L) {
     add_unary_method(lua_push3vl, lua_check3vl, "__band", Vector3vl.prototype.and);
     add_unary_method(lua_push3vl, lua_check3vl, "__bor", Vector3vl.prototype.or);
     add_unary_method(lua_push3vl, lua_check3vl, "__bxor", Vector3vl.prototype.xor);
-    add_unary_method(lua_pushboolean, lua_check3vl, "__eq", Vector3vl.prototype.eq);
+    add_unary_method(lua_pushboolean, (L, n) => lua_check3vl(L, n), "__eq", Vector3vl.prototype.eq);
     add_nullary_method(lua_push3vl, "__bnot", Vector3vl.prototype.not);
     add_property(lua_pushinteger, "__len", Vector3vl.prototype, "bits");
-    add_unary_method(lua_push3vl, luaL_checkinteger, "__call", function(i) {
+    add_unary_method(lua_push3vl, (L, n) => luaL_checkinteger(L, n), "__call", function(i) {
         luaL_argcheck(L, i >= -this.bits && i < this.bits, 2, "index out of bounds");
         const ii = i >= 0 ? i : this.bits + i;
         const j = luaL_optinteger(L, 3, undefined);
@@ -327,10 +336,9 @@ export class LuaRunner {
         value: (L) => {
             const args = lua_gettop(L);
             if (args.length < 2) luaL_error(L, "sim.value: not enough arguments");
-            const val = lua_check3vl(L, 1);
             const wire = this._vararg_findwire(L, args, 1);
             if (wire === undefined) luaL_error(L, "sim.value: wire not found");
-            if (wire.get('bits') != val.bits) luaL_error(L, "sim.value: wrong bit width");
+            const val = lua_check3vl(L, 1, wire.get('bits'));
             lua_pushevent(L, this._make_event(wire, val));
             return 1;
         },
@@ -340,8 +348,8 @@ export class LuaRunner {
         },
         setinput: (L) => {
             const name = luaL_checkstring(L, 1);
-            const vec = lua_check3vl(L, 2);
             const inp = this.#circuit.findInputByNet(to_jsstring(name));
+            const vec = lua_check3vl(L, 2, inp.get('bits'));
             luaL_argcheck(L, inp !== undefined, 1, "input not found");
             inp.setLogicValue(vec);
             return 0;
@@ -641,7 +649,7 @@ export class Display3vlLua {
         } catch (e) {
             return null;
         }
-        const ret = lua_to3vl(this.#L, -1);
+        const ret = lua_to3vl(this.#L, -1, bits);
         lua_pop(this.#L, 1);
         return ret;
     }

@@ -81,6 +81,11 @@ test("new", () => {
     expect(runner.run3vl(`return vec("4b10")`).eq(Vector3vl.fromBin("10", 4))).toBeTruthy();
     expect(runner.run3vl(`return vec("h10")`).eq(Vector3vl.fromHex("10"))).toBeTruthy();
     expect(runner.run3vl(`return vec("o10")`).eq(Vector3vl.fromOct("10"))).toBeTruthy();
+    expect(runner.run3vl(`return vec(true, 4)`).eq(Vector3vl.ones(4))).toBeTruthy();
+    expect(runner.run3vl(`return vec(1, 4)`).eq(Vector3vl.fromBin("1", 4))).toBeTruthy();
+    expect(runner.run3vl(`return vec(vec(1), 4)`).eq(Vector3vl.fromBin("1", 4))).toBeTruthy();
+    expect(runner.run3vl(`return vec(3, 1)`).eq(Vector3vl.one)).toBeTruthy();
+    expect(runner.run3vl(`return vec(-1, 4)`).eq(Vector3vl.ones(4))).toBeTruthy();
     expect(() => runner.run3vl(`return vec(nil)`)).toThrow(LuaError);
 });
 
@@ -161,7 +166,8 @@ test("setinput", () => {
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     runner.run(`sim.setinput("ni", false);`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
-    expect(() => runner.run3vl(`return sim.setinput("ni", 2)`)).toThrow(LuaError);
+    runner.run(`sim.setinput("ni", 3);`);
+    expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(() => runner.run3vl(`return sim.setinput("foo", true)`)).toThrow(LuaError);
 });
 

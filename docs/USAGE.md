@@ -14,7 +14,7 @@ The undefined state is analogous to the `x` value in Verilog/SystemVerilog.
 
 The `vec` table is callable.
 When called, it is like a constructor, building new three-value vectors.
-The first and only parameter specifies the value of the vector. 
+The first parameter specifies the value of the vector. 
 It can be a boolean, an integer, a string or another three-value vector.
 The resulting vector is, depending on the parameter type:
 
@@ -30,7 +30,15 @@ The resulting vector is, depending on the parameter type:
   * `VALUE` is the value written in the chosen system.
   Example values: `b101`,  `8d7`, `32hbeef`.
 * If vector: the vector is copied.
-  
+
+The second parameter, which is optional, is an integer specifying the required number of bits.
+When passed, the returned vector will have exactly the specified number of bits.
+The behavior is different depending on the type of the first parameter:
+
+* If boolean: the resulting vector consists of all ones or all zeros.
+* If integer: the number is truncated or sign-extended.
+* All others: the vector is truncated or zero-extended. 
+
 The above method of constructing vectors is also used in many API procedures in both `vec` and `sim`
 where a vector is expected. This allows writing shorter, more concise scripts.
 
