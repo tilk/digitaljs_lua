@@ -45,11 +45,11 @@ where a vector is expected. This allows writing shorter, more concise scripts.
 There also exist functions which construct vectors from a string written in a given numeric system,
 a boolean or an integer. They are:
 
-* `vec.frombin(s, n)` for binary,
-* `vec.fromoct(s, n)` for octal,
-* `vec.fromhex(s, n)` for hexadecimal,
-* `vec.frombool(b, n)` for a boolean value,
-* `vec.frominteger(k, n)` for an integer.
+* `vec.frombin(s[, n])` for binary,
+* `vec.fromoct(s[, n])` for octal,
+* `vec.fromhex(s[, n])` for hexadecimal,
+* `vec.frombool(b[, n])` for a boolean value,
+* `vec.frominteger(k[, n])` for an integer.
 
 The `n` parameter denotes the number of bits, and can be omitted.
 
@@ -155,13 +155,16 @@ This is possible only in threads started directly by DigitalJS and will not work
 
 ### Waiting for events
 
-The function `sim.wait(e)` suspends execution of the script until the event named `e` happens. You can specify an event in one of the following ways:
+The function `sim.wait(e[, n])` suspends execution of the script until the event named `e` happens. You can specify an event in one of the following ways:
 
 * `sim.posedge(s1, ..., sn, s)` denotes a positive edge on a single bit wire named `s` (in a subcircuit named by path `s1` to `sn`);
 * `sim.negedge(s1, ..., sn, s)` denotes a negative edge on a single bit wire named `s`;
 * `sim.value(v, s1, ..., sn, s)` denotes the value of the wire named `s` changing to `v`.
 
 To wait until one of a set of events happen, the events can be added together by using the bitwise or operator `|`.
+
+The optional `n` parameter denotes a timeout.
+If it is specified, the thread is resumed after `n` simulation cycles even if none of the specified events occur.
 
 ### Custom signal encoders/decoders
 

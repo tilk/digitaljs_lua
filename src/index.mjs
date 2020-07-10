@@ -311,8 +311,11 @@ export class LuaRunner {
             if (!lua_isyieldable(L)) luaL_error(L, "sim.wait: thread not yieldable");
             const tdata = this.#threads.get(L);
             if (tdata === undefined) luaL_error(L, "sim.wait: thread not suspendable");
+            const delay = luaL_optinteger(L, 2, undefined);
             const evt = lua_checkevent(L, 1);
             for (const cb of evt(L)) tdata.callbacks.push(cb);
+            if (delay !== undefined)
+                this._enqueue(L, this.#circuit.tick + delay - 1);
             lua_yield(L, 0);
         },
         posedge: (L) => {
@@ -439,6 +442,8 @@ export class LuaRunner {
                     const tdata = this.#pidthreads.get(pid);
                     to_resume.push(tdata);
                     this._unlisten(tdata);
+                    console.assert(tdata.queuetick == tick);
+                    tdata.queuetick = undefined;
                 }
                 for (const tdata of to_resume)
                     try {
@@ -492,7 +497,8 @@ export class LuaRunner {
         const new_tdata = {
             pid: pid,
             env: thr, 
-            callbacks: []
+            callbacks: [],
+            queuetick: undefined
         };
         this.#pidthreads.set(pid, new_tdata);
         this.#threads.set(thr, new_tdata);
@@ -529,9 +535,15 @@ export class LuaRunner {
         this.trigger('thread:stop', tdata.pid);
     }
     _enqueue(L, tick) {
+        const thr = this.#threads.get(L);
+        if (thr.queuetick !== undefined) {
+            if (thr.queuetick < tick) return;
+            this.#queue.get(tick).delete(thr.pid);
+        }
+        thr.queuetick = tick;
         if (this.#queue.get(tick) === undefined)
             this.#queue.set(tick, new Set());
-        this.#queue.get(tick).add(this._thread_pid(L));
+        this.#queue.get(tick).add(thr.pid);
     }
     _thread_pid(L) {
         return this.#threads.get(L).pid;

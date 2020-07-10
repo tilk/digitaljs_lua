@@ -293,6 +293,18 @@ test("event union", () => {
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
+test("event timeout", () => {
+    const pid = runner.runThread(`sim.setinput("ni", false); sim.wait(sim.posedge("w"), 2); sim.setinput("ni", true)`);
+    expect(circuit.getOutput("o").isLow).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.updateGates();
+    expect(circuit.getOutput("o").isLow).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.updateGates();
+    expect(circuit.getOutput("o").isHigh).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeFalsy();
+});
+
 test("display", () => {
     const display = new Display3vlLua({source: `return {
         name = "luabin",
