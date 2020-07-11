@@ -135,6 +135,10 @@ test("bit slice", () => {
     expect(runner.run3vl(`return vec(2)(-1, 1)`).eq(Vector3vl.one)).toBeTruthy();
     expect(runner.run3vl(`return vec(2)(-2, 1)`).eq(Vector3vl.zero)).toBeTruthy();
     expect(runner.run3vl(`return vec(2)(0, 2)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
+    expect(runner.run3vl(`return vec("8h5a")(0, 2)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
+    expect(runner.run3vl(`return vec("8h5a")(0, 4)`).eq(Vector3vl.fromHex('a'))).toBeTruthy();
+    expect(runner.run3vl(`return vec("8h5a")(4, 4)`).eq(Vector3vl.fromHex('5'))).toBeTruthy();
+    expect(() => runner.run3vl(`return vec(2)(0, -1)`)).toThrow(LuaError);
 });
 
 test("concat", () => {

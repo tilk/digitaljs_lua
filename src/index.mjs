@@ -244,16 +244,19 @@ function luaopen_vec(L) {
     add_unary_method(lua_pushboolean, (L, n) => lua_check3vl(L, n), "__eq", Vector3vl.prototype.eq);
     add_nullary_method(lua_push3vl, "__bnot", Vector3vl.prototype.not);
     add_property(lua_pushinteger, "__len", Vector3vl.prototype, "bits");
-    add_unary_method(lua_push3vl, (L, n) => luaL_checkinteger(L, n), "__call", function(i) {
-        luaL_argcheck(L, i >= -this.bits && i < this.bits, 2, "index out of bounds");
-        const ii = i >= 0 ? i : this.bits + i;
+    add_method("__call", function(L) {
+        const v = lua_check3vl(L, 1);
+        const i = luaL_checkinteger(L, 2);
+        luaL_argcheck(L, i >= -v.bits && i < v.bits, 2, "index out of bounds");
+        const ii = i >= 0 ? i : v.bits + i;
         const j = luaL_optinteger(L, 3, undefined);
         if (j === undefined)
-            return Vector3vl.make(1, this.get(ii));
+            lua_push3vl(L, Vector3vl.make(1, v.get(ii)));
         else {
             luaL_argcheck(L, j >= 0, "slice count negative");
-            return this.slice(ii, ii + j);
+            lua_push3vl(L, v.slice(ii, ii + j));
         }
+        return 1;
     });
     add_unary_method(lua_push3vl, lua_check3vl, "__concat", function(v) {
         return v.concat(this);
