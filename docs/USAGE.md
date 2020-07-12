@@ -263,3 +263,7 @@ sim.registerdisplay({
 })
 ```
 
+### RISC V encoder/decoder
+
+The linked code is a [encoder/decoder for RV32I instructions](examples/riscv.lua).
+
