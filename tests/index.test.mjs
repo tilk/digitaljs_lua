@@ -146,6 +146,8 @@ test("concat", () => {
     expect(runner.run3vl(`return vec(true) .. vec(false)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
     expect(runner.run3vl(`return vec(true) .. false`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
     expect(runner.run3vl(`return true .. vec(false)`).eq(Vector3vl.fromBin('10'))).toBeTruthy();
+    expect(runner.run3vl(`return vec("4b1010") .. vec("4b0101")`).eq(Vector3vl.fromBin('10100101'))).toBeTruthy();
+    expect(runner.run3vl(`return vec("2b10") .. vec("4b1001") .. vec("2b01")`).eq(Vector3vl.fromBin('10100101'))).toBeTruthy();
 });
 
 test("setinput_id", () => {

@@ -31,6 +31,7 @@ const {
     lua_gettop,
     lua_getglobal,
     lua_getfield,
+    lua_isnil,
     lua_rawgeti,
     lua_pop,
     lua_pushcfunction,
@@ -258,7 +259,7 @@ function luaopen_vec(L) {
         }
         return 1;
     });
-    add_unary_method(lua_push3vl, lua_check3vl, "__concat", function(v) {
+    add_unary_method(lua_push3vl, (L, n) => lua_check3vl(L, n), "__concat", function(v) {
         return v.concat(this);
     });
     add_nullary_method(lua_pushstring, "__tostring", Vector3vl.prototype.toBin);
@@ -621,7 +622,10 @@ export class Display3vlLua {
             this.#sort = lua_tointeger(this.#L, -1);
             lua_pop(this.#L, 1);
         }
-        if (regexValidate) this.#regex = RegExp('^(?:' + pattern + ')$');
+        lua_getfield(this.#L, -1, to_luastring("validate"));
+        if (lua_isnil(this.#L, -1)) regexValidate = true;
+        lua_pop(this.#L, 1);
+        if (regexValidate) this.#regex = RegExp('^(?:' + this.#pattern + ')$');
         this.#ref = luaL_ref(this.#L, LUA_REGISTRYINDEX);
     }
     unref() {

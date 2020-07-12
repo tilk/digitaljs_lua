@@ -197,6 +197,7 @@ An encoder/decoder is represented in Lua using a table with the following fields
 * `validate(data, bits)` is a function which should return a boolean value.
   The parameters have the same meaning as for the `read(data, bits)` function.
   The function should return `true` if and only if the `read` function would accept the given input.
+  If the `validate` function is omitted, validation will be based on the `pattern` field.
 * `size(bits)` is a function which should return a positive integer.
   The parameter, `bits`, is a non-negative integer denoting the number of bits we are interested in.
   The function should return the maximum number of characters required to decode a `bits`-sized value.
