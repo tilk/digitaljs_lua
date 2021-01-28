@@ -571,10 +571,12 @@ export class LuaRunner {
     _make_event(wire, trigger) {
         return L => {
             const handler = (wire, signal) => {
-                if (signal.eq(trigger))
+                if (signal.eq(trigger)) {
                     this._enqueue(L, this.#circuit.tick);
+                    this.stopListening(wire, "change:signal", handler);
+                }
             };
-            this.listenToOnce(wire, "change:signal", handler);
+            this.listenTo(wire, "change:signal", handler);
             return [handler];
         };
     }

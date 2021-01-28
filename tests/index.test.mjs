@@ -250,6 +250,27 @@ test("posedge", () => {
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
+test("posedge 2", () => {
+    const pid = runner.runThread(`sim.setinput("ni", true); sim.wait(sim.posedge("w")); sim.setinput("ni", false)`);
+    expect(circuit.getOutput("o").isHigh).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.updateGates();
+    expect(circuit.getOutput("o").isHigh).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.setInput("i", Vector3vl.zero);
+    expect(circuit.getOutput("o").isLow).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.updateGates();
+    expect(circuit.getOutput("o").isLow).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.setInput("i", Vector3vl.one);
+    expect(circuit.getOutput("o").isHigh).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeTruthy();
+    circuit.updateGates();
+    expect(circuit.getOutput("o").isLow).toBeTruthy();
+    expect(runner.isThreadRunning(pid)).toBeFalsy();
+});
+
 test("value", () => {
     const pid = runner.runThread(`sim.setinput("ni", false); sim.wait(sim.value(1, "w")); sim.setinput("ni", false)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
