@@ -358,14 +358,14 @@ export class LuaRunner {
             const inp = this.#circuit.findInputByNet(to_jsstring(name));
             const vec = lua_check3vl(L, 2, inp.get('bits'));
             luaL_argcheck(L, inp !== undefined, 1, "input not found");
-            inp.setLogicValue(vec);
+            inp.setInput(vec);
             return 0;
         },
         getoutput: (L) => {
             const name = luaL_checkstring(L, 1);
             const out = this.#circuit.findOutputByNet(to_jsstring(name));
             luaL_argcheck(L, out !== undefined, 1, "output not found");
-            const res = out.getLogicValue();
+            const res = out.getOutput();
             lua_push3vl(L, res);
             return 1;
         },
