@@ -2,6 +2,8 @@
 
 import { Vector3vl } from '3vl';
 import { HeadlessCircuit } from 'digitaljs/src/circuit';
+import { SynchEngine } from 'digitaljs/src/engines/synch';
+import { WorkerEngine } from 'digitaljs/src/engines/worker';
 import { LuaRunner, Display3vlLua, LuaError } from '../src/index.mjs';
 
 const data = {
@@ -15,16 +17,39 @@ const data = {
             type: "Output",
             net: "no",
             bits: 1
+        },
+        nego: {
+            type: "Output",
+            net: "nnego",
+            bits: 1
+        },
+        gate: {
+            type: "Not"
         }
     },
     connectors: [
-        {name: "w", to: {id: "o", port: "in"}, from: {id: "i", port: "out"}}
+        {name: "w", to: {id: "o", port: "in"}, from: {id: "i", port: "out"}},
+        {name: "w1", to: {id: "gate", port: "in"}, from: {id: "i", port: "out"}},
+        {name: "w2", to: {id: "nego", port: "in"}, from: {id: "gate", port: "out"}}
     ],
     subcircuits: {}
 };
 
-const circuit = new HeadlessCircuit(data);
-const runner = new LuaRunner(circuit);
+describe.each([
+["synch", SynchEngine],
+["worker", WorkerEngine]])('%s', (name, engine) => {
+
+let circuit, runner;
+
+beforeAll(() => {
+    circuit = new HeadlessCircuit(data, { engine, engineOptions: { workerURL: new URL('../node_modules/digitaljs/lib/engines/worker-worker.js', require('url').pathToFileURL(__filename).toString()) } });
+    circuit.observeGraph();
+    runner = new LuaRunner(circuit);
+});
+
+afterAll(() => {
+    circuit.shutdown();
+});
 
 test("frombool", () => {
     expect(runner.run3vl(`return vec.frombool(true);`).eq(Vector3vl.one)).toBeTruthy();
@@ -196,23 +221,23 @@ test("tick", () => {
     expect(runner.runNumber(`return sim.tick()`)).toEqual(circuit.tick);
 });
 
-test("sleep 1", () => {
+test("sleep 1", async () => {
     const pid = runner.runThread(`sim.setinput_id("i", false); sim.sleep(1); sim.setinput_id("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("sleep 2", () => {
+test("sleep 2", async () => {
     const pid = runner.runThread(`sim.setinput_id("i", false); sim.sleep(2); sim.setinput_id("i", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
@@ -227,7 +252,7 @@ test("stopThread", () => {
     runner.stopThread(pid);
     expect(runner.isThreadRunning(pid)).toBeFalsy();
     expect(callback.mock.calls.length).toBe(1);
-    circuit.updateGates();
+    circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
     expect(callback.mock.calls.length).toBe(1);
@@ -235,99 +260,99 @@ test("stopThread", () => {
     runner.off('thread:stop', callback);
 });
 
-test("posedge", () => {
+test("posedge", async () => {
     const pid = runner.runThread(`sim.setinput("ni", false); sim.wait(sim.posedge("w")); sim.setinput("ni", false)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.one);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("posedge 2", () => {
+test("posedge 2", async () => {
     const pid = runner.runThread(`sim.setinput("ni", true); sim.wait(sim.posedge("w")); sim.setinput("ni", false)`);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.zero);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.one);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("value", () => {
+test("value", async () => {
     const pid = runner.runThread(`sim.setinput("ni", false); sim.wait(sim.value(1, "w")); sim.setinput("ni", false)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.one);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("negedge", () => {
+test("negedge", async () => {
     const pid = runner.runThread(`sim.setinput("ni", true); sim.wait(sim.negedge("w")); sim.setinput("ni", true)`);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.zero);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("event union", () => {
+test("event union", async () => {
     const pid = runner.runThread(`sim.setinput("ni", true); sim.wait(sim.negedge("w") | sim.posedge("w")); sim.setinput("ni", true); sim.sleep(1); sim.setinput("ni", false); sim.wait(sim.negedge("w") | sim.posedge("w")); sim.setinput("ni", false)`);
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.zero);
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
     circuit.setInput("i", Vector3vl.one);
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
 
-test("event timeout", () => {
+test("event timeout", async () => {
     const pid = runner.runThread(`sim.setinput("ni", false); sim.wait(sim.posedge("w"), 2); sim.setinput("ni", true)`);
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isLow).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeTruthy();
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(circuit.getOutput("o").isHigh).toBeTruthy();
     expect(runner.isThreadRunning(pid)).toBeFalsy();
 });
@@ -370,12 +395,12 @@ test("lua errors", () => {
     expect(() => runner.runThread('"x"+1')).toThrow(LuaError);
 });
 
-test("lua delayed errors", () => {
+test("lua delayed errors", async () => {
     const callback = jest.fn(e => {});
     runner.on('thread:error', callback);
     const pid = runner.runThread("sim.sleep(1); foo()");
     expect(callback.mock.calls.length).toBe(0);
-    circuit.updateGates();
+    await circuit.updateGates({synchronous: true});
     expect(callback.mock.calls.length).toBe(1);
     expect(callback.mock.calls[0][0]).toBe(pid);
     expect(callback.mock.calls[0][1]).toBeInstanceOf(LuaError);
@@ -390,5 +415,7 @@ test("print", () => {
     expect(callback.mock.calls[0][0]).toStrictEqual(["foo"]);
     expect(callback.mock.calls[1][0]).toStrictEqual(["1", "10"]);
     runner.off("print", callback);
+});
+
 });
 

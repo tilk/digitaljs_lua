@@ -300,15 +300,15 @@ export class LuaRunner {
     #L;
     #circuit;
     #threads = new Map();
-    #queue = new Map();
     #pidthreads = new Map();
     #simlib = {
         sleep: (L) => {
             if (!lua_isyieldable(L)) luaL_error(L, "sim.sleep: thread not yieldable");
-            if (!this.#threads.has(L)) luaL_error(L, "sim.sleep: thread not suspendable");
+            const tdata = this.#threads.get(L);
+            if (tdata === undefined) luaL_error(L, "sim.sleep: thread not suspendable");
             const delay = luaL_checkinteger(L, 1);
             luaL_argcheck(L, delay > 0, 1, "sim.sleep: too short delay");
-            this._enqueue(L, this.#circuit.tick + delay - 1);
+            this._enqueue(tdata, this.#circuit.tick + delay);
             lua_yield(L, 0);
         },
         wait: (L) => {
@@ -317,9 +317,10 @@ export class LuaRunner {
             if (tdata === undefined) luaL_error(L, "sim.wait: thread not suspendable");
             const delay = luaL_optinteger(L, 2, undefined);
             const evt = lua_checkevent(L, 1);
-            for (const cb of evt(L)) tdata.callbacks.push(cb);
+            console.assert(tdata.waitMonitors === undefined);
+            tdata.waitMonitors = new Set(evt(L));
             if (delay !== undefined)
-                this._enqueue(L, this.#circuit.tick + delay - 1);
+                this._enqueue(tdata, this.#circuit.tick + delay);
             lua_yield(L, 0);
         },
         posedge: (L) => {
@@ -405,7 +406,7 @@ export class LuaRunner {
             lua_pushcfunction(L, lprotect((L) => {
                 const e1 = lua_checkevent(L, 1);
                 const e2 = lua_checkevent(L, 2);
-                lua_pushevent(L, L => e1(L) + e2(L));
+                lua_pushevent(L, L => [].concat(e1(L)).concat(e2(L)));
                 return 1;
             }));
             lua_setfield(L, -2, to_luastring("__bor"));
@@ -437,31 +438,10 @@ export class LuaRunner {
             return 0;
         }));
         lua_setglobal(L, 'print');
-        this.listenTo(circuit, 'postUpdateGates', (tick) => {
-            const q = this.#queue.get(tick);
-            this.#queue.delete(tick);
-            if (q !== undefined) {
-                const to_resume = [];
-                for (const pid of q) {
-                    const tdata = this.#pidthreads.get(pid);
-                    to_resume.push(tdata);
-                    this._unlisten(tdata);
-                    console.assert(tdata.queuetick == tick);
-                    tdata.queuetick = undefined;
-                }
-                for (const tdata of to_resume)
-                    try {
-                        this._resume(tdata.env);
-                    } catch (e) {
-                        this.trigger('thread:error', tdata.pid, e);
-                    }
-            }
-        });
     }
     shutdown() {
         this.stopListening();
         this.#threads = undefined;
-        this.#queue = undefined;
         this.#pidthreads = undefined;
     }
     _run(source, rets) {
@@ -501,8 +481,8 @@ export class LuaRunner {
         const new_tdata = {
             pid: pid,
             env: thr, 
-            callbacks: [],
-            queuetick: undefined
+            waitMonitors: undefined,
+            alarmId: undefined
         };
         this.#pidthreads.set(pid, new_tdata);
         this.#threads.set(thr, new_tdata);
@@ -525,40 +505,48 @@ export class LuaRunner {
         if (tdata === undefined) return;
         this._stopthread(tdata);
     }
-    _unlisten(tdata) {
-        for (const c of tdata.callbacks)
-            this.stopListening(undefined, undefined, c);
+    _removeWaitMonitors(tdata) {
+        if (tdata.waitMonitors !== undefined) {
+            for (const monitorId of tdata.waitMonitors)
+                this.#circuit.unmonitor(monitorId);
+            tdata.waitMonitors = undefined;
+        }
+        if (tdata.alarmId !== undefined) {
+            this.#circuit.unalarm(tdata.alarmId);
+            tdata.alarmId = undefined;
+        }
     }
     _stopthread(tdata) {
         luaL_unref(this.#L, LUA_REGISTRYINDEX, tdata.pid);
-        this._unlisten(tdata);
-        for (const s of this.#queue.values())
-            s.delete(tdata.pid);
+        this._removeWaitMonitors(tdata);
         this.#pidthreads.delete(tdata.pid);
         this.#threads.delete(tdata.env);
         this.trigger('thread:stop', tdata.pid);
     }
-    _enqueue(L, tick) {
-        const thr = this.#threads.get(L);
-        if (thr.queuetick !== undefined) {
-            if (thr.queuetick < tick) return;
-            this.#queue.get(tick).delete(thr.pid);
-        }
-        thr.queuetick = tick;
-        if (this.#queue.get(tick) === undefined)
-            this.#queue.set(tick, new Set());
-        this.#queue.get(tick).add(thr.pid);
+    _enqueue(tdata, tick) {
+        console.assert(tdata.alarmId === undefined);
+        const handler = () => {
+            tdata.alarmId = undefined;
+            this._resume(tdata);
+        };
+        tdata.alarmId = this.#circuit.alarm(tick, handler, {stopOnAlarm: true, synchronous: true});
     }
     _thread_pid(L) {
         return this.#threads.get(L).pid;
     }
-    _resume(L) {
-        const ret_re = lua_resume(L, null, 0);
-        if (ret_re != LUA_YIELD) {
-            const tdata = this.#threads.get(L);
-            if (tdata !== undefined)
-                this._stopthread(tdata);
-            lua_handle_error(L, "Failed resuming LUA thread:", ret_re);
+    _resume(tdata) {
+        this._removeWaitMonitors(tdata);
+        const L = tdata.env;
+        try {
+            const ret_re = lua_resume(L, null, 0);
+            if (ret_re != LUA_YIELD) {
+                const tdata = this.#threads.get(L);
+                if (tdata !== undefined)
+                    this._stopthread(tdata);
+                lua_handle_error(L, "Failed resuming LUA thread:", ret_re);
+            }
+        } catch (e) {
+            this.trigger('thread:error', tdata.pid, e);
         }
     }
     _vararg_findwire(L, args, start = 0) {
@@ -570,14 +558,15 @@ export class LuaRunner {
     }
     _make_event(wire, trigger) {
         return L => {
-            const handler = (wire, signal) => {
-                if (signal.eq(trigger)) {
-                    this._enqueue(L, this.#circuit.tick);
-                    this.stopListening(wire, "change:signal", handler);
-                }
+            let monitorId;
+            const handler = (tick, signal) => {
+                const tdata = this.#threads.get(L);
+                if (tdata.waitMonitors == undefined || !tdata.waitMonitors.has(monitorId)) 
+                    return;
+                this._resume(tdata);
             };
-            this.listenTo(wire, "change:signal", handler);
-            return [handler];
+            monitorId = this.#circuit.monitorWire(wire, handler, {triggerValues: [trigger], stopOnTrigger: true, oneShot: true, synchronous: true});
+            return [monitorId];
         };
     }
 };
