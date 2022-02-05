@@ -1,6 +1,6 @@
 {
   "name": "digitaljs_lua",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Lua scripting for DigitalJS",
   "main": "src/index.mjs",
   "author": "Marek Materzok",
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "3vl": "^1.0.0",
-    "digitaljs": "^0.10.0",
+    "digitaljs": "^0.11.0",
     "fengari": "0.1.4",
     "fengari-web": "^0.1.4"
   },
