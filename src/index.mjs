@@ -325,7 +325,7 @@ export class LuaRunner {
         },
         posedge: (L) => {
             const args = lua_gettop(L);
-            if (args.length < 1) luaL_error(L, "sim.posedge: not enough arguments");
+            if (args < 1) luaL_error(L, "sim.posedge: not enough arguments");
             const wire = this._vararg_findwire(L, args, 0);
             if (wire === undefined) luaL_error(L, "sim.posedge: wire not found");
             if (wire.get('bits') != 1) luaL_error(L, "sim.posedge: wire not 1-bit");
@@ -334,7 +334,7 @@ export class LuaRunner {
         },
         negedge: (L) => {
             const args = lua_gettop(L);
-            if (args.length < 1) luaL_error(L, "sim.negedge: not enough arguments");
+            if (args < 1) luaL_error(L, "sim.negedge: not enough arguments");
             const wire = this._vararg_findwire(L, args, 0);
             if (wire === undefined) luaL_error(L, "sim.negedge: wire not found");
             if (wire.get('bits') != 1) luaL_error(L, "sim.negedge: wire not 1-bit");
@@ -343,7 +343,7 @@ export class LuaRunner {
         },
         value: (L) => {
             const args = lua_gettop(L);
-            if (args.length < 2) luaL_error(L, "sim.value: not enough arguments");
+            if (args < 2) luaL_error(L, "sim.value: not enough arguments");
             const wire = this._vararg_findwire(L, args, 1);
             if (wire === undefined) luaL_error(L, "sim.value: wire not found");
             const val = lua_check3vl(L, 1, wire.get('bits'));
@@ -384,7 +384,7 @@ export class LuaRunner {
         },
         getvalue: (L) => {
             const args = lua_gettop(L);
-            if (args.length < 1) luaL_error(L, "sim.getvalue: not enough arguments");
+            if (args < 1) luaL_error(L, "sim.getvalue: not enough arguments");
             const wire = this._vararg_findwire(L, args, 0);
             if (wire === undefined) luaL_error(L, "sim.getvalue: wire not found");
             lua_push3vl(L, wire.get('signal'));
